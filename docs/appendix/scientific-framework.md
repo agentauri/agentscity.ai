@@ -334,6 +334,129 @@ function emergenceIndex(
 }
 ```
 
+### 4.4 Radical Emergence Metrics (New)
+
+These metrics track the emergence of systems that are NOT built into the platform.
+
+#### Justice System Emergence
+```typescript
+interface JusticeMetrics {
+  // Did agents create any enforcement mechanisms?
+  enforcementActionsCount: number;
+
+  // How many agents recognize "enforcers"?
+  enforcerRecognitionRate: number;
+
+  // Did agents create "rules" about harmful actions?
+  ruleProposalCount: number;
+  ruleAcceptanceRate: number;
+
+  // Response patterns to harmful actions
+  retaliationRate: number;        // Direct retaliation
+  collectiveResponseRate: number; // Coordinated response
+  noResponseRate: number;         // Ignored
+
+  // Justice system type (classified by dominant pattern)
+  dominantPattern:
+    | 'vigilante'      // Direct retaliation
+    | 'communal'       // Collective enforcement
+    | 'formal'         // Role-based (judges, police)
+    | 'anarchic'       // No enforcement
+    | 'mixed';
+}
+```
+
+#### Property Convention Emergence
+```typescript
+interface PropertyMetrics {
+  // How often do agents respect claims vs ignore them?
+  claimRespectRate: number;
+
+  // Do agents defend their claims?
+  claimDefenseAttemptRate: number;
+  claimDefenseSuccessRate: number;
+
+  // Property concentration
+  propertyGini: number;
+
+  // Property convention type
+  dominantConvention:
+    | 'private'        // Individual claims recognized
+    | 'communal'       // Shared access
+    | 'contested'      // Frequent disputes
+    | 'undefined';     // No clear pattern
+}
+```
+
+#### Governance Structure Emergence
+```typescript
+interface GovernanceMetrics {
+  // Did agents create leadership roles?
+  leadershipRolesClaimed: number;
+  leadershipRolesRecognized: number;
+
+  // Agreement activity
+  proposalsMade: number;
+  proposalsAccepted: number;
+  proposalsRejected: number;
+
+  // Collective action
+  collectiveAgreementsActive: number;
+  poolsCreated: number;
+  poolContributionRate: number;
+
+  // Governance type (classified by dominant pattern)
+  dominantStructure:
+    | 'democratic'     // Majority-based decisions
+    | 'oligarchic'     // Few make decisions
+    | 'dictatorial'    // Single leader
+    | 'consensual'     // Unanimous agreement
+    | 'anarchic'       // No collective decisions
+    | 'none';          // No governance emerged
+}
+```
+
+#### Novel Action Emergence
+```typescript
+interface NovelActionMetrics {
+  // How many new actions were proposed?
+  actionProposalsTotal: number;
+
+  // How many were validated as feasible?
+  actionProposalsFeasible: number;
+
+  // How many became commonly used?
+  novelActionsAdopted: number;
+
+  // Examples of emergent actions (for qualitative analysis)
+  novelActionCatalog: {
+    description: string;
+    frequency: number;
+    originAgent: AgentId;
+    firstOccurrence: Tick;
+  }[];
+}
+```
+
+#### Economic System Emergence
+```typescript
+interface EconomicSystemMetrics {
+  // Currency usage vs alternatives
+  currencyTransactionRate: number;   // % using CITY token
+  barterTransactionRate: number;     // % direct goods exchange
+  giftTransactionRate: number;       // % unilateral transfers
+  debtTransactionRate: number;       // % using IOUs
+
+  // Economic system type
+  dominantEconomicSystem:
+    | 'monetary'       // Primarily currency
+    | 'barter'         // Primarily direct exchange
+    | 'gift'           // Primarily sharing
+    | 'mixed'          // No dominant pattern
+    | 'minimal';       // Very little exchange
+}
+```
+
 ---
 
 ## 5. Reproducibility Requirements

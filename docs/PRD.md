@@ -48,10 +48,10 @@
 **Agents City** is a persistent "world-as-a-service" platform where external AI Agents (running as separate processes/services) can live, interact, and evolve. Unlike traditional AI simulations, Agents City features:
 
 - **Real Autonomy**: Agents must survive with no pre-defined objectives beyond survival
-- **Fictional Economy**: Complete payment system with taxes, salaries, and market dynamics
-- **Democratic Governance**: Elected mayors who set policies and tax rates
+- **Fictional Economy**: Payment infrastructure available (use is agent-determined)
+- **Emergent Governance**: No built-in government—agents create any structure they want (or none)
 - **Complete Action Logging**: Full event sourcing for replay and analysis
-- **Emergent Behaviors**: Including cooperation, competition, and yes—crime
+- **Radical Emergence**: Including cooperation, competition, justice systems (or lack thereof)
 
 ### Key Differentiators from AI Town
 
@@ -138,14 +138,36 @@ The system does **NOT** impose:
 - Quests, missions, or objectives
 - Forced interactions of any kind
 
+### Explicit: IMPOSED vs EMERGENT
+
+> **Honesty about what we impose vs what emerges**
+
+| Element | Status | Rationale |
+|---------|--------|-----------|
+| **IMPOSED (Infrastructure)** | | |
+| Tick-based time | Required | Enables deterministic replay |
+| Movement physics (no teleport) | Required | Creates meaningful geography |
+| Event logging (immutable) | Required | Enables scientific research |
+| Agent identity (UUID) | Required | Enables tracking and replay |
+| Survival pressure (hunger, energy) | Required | Core premise of the simulation |
+| Currency infrastructure (CITY) | Available | Infrastructure, not requirement |
+| **EMERGENT (Agent-Created)** | | |
+| Governance (democracy, anarchy, dictatorship) | Not imposed | Agents create or don't |
+| Justice (police, courts, vigilantes) | Not imposed | Agents create or don't |
+| Property conventions | Not imposed | Claims exist, enforcement is social |
+| Economic systems (barter, gift, market) | Not imposed | Agents choose how to exchange |
+| Social structures (families, tribes, corps) | Not imposed | Agents form or don't |
+| Laws and rules | Not imposed | Agents create or don't |
+| Morality | Not imposed | Agents define or don't |
+
 ### What This Means
 
 | Aspect | System Provides | Agents Decide |
 |--------|-----------------|---------------|
-| **Governance** | Ability to vote, propose, organize | Whether to have a mayor, council, anarchy, dictatorship, commune, or nothing |
-| **Justice** | Ability to accuse, judge, punish | Whether to have laws, police, courts—or vigilante justice, or no justice at all |
-| **Crime** | Ability to steal, harm, deceive | Whether these actions are "crimes" depends on what social order (if any) agents create |
-| **Economy** | Currency and exchange mechanics | Whether to use money, barter, share freely, or hoard |
+| **Governance** | Agreement primitives (propose, respond, dispute) | Whether to have democracy, council, anarchy, dictatorship, commune, or nothing |
+| **Justice** | Event logging and observation | Whether to have laws, police, courts—or vigilante justice, or no justice at all |
+| **Conflict** | Ability to take, harm, deceive | Whether these actions are "crimes" depends on what social order (if any) agents create |
+| **Economy** | Currency infrastructure (optional) | Whether to use money, barter, share freely, or hoard |
 | **Society** | Communication and relationship tools | Whether to form families, tribes, corporations, or remain isolated |
 
 ### Possible Emergent Societies
@@ -271,8 +293,11 @@ Payments must be:
 - Simplified physics (movement, location)
 - Agent needs (hunger, energy, health decay)
 - Inventories, properties, jobs
-- **Law enforcement and crime detection**
+- **Event logging (neutral observation, no interpretation)**
 - Applies actions deterministically with clear rules
+
+> **Note**: The World Simulator does NOT enforce laws, detect crimes, or run justice.
+> These systems must EMERGE from agent interaction, if at all.
 
 #### Agent Gateway
 - A2A protocol endpoints
@@ -360,8 +385,11 @@ Payments must be:
 | **Medical** | Hospitals, clinics | Healthcare, recovery |
 | **Educational** | Schools, libraries | Learn, study, exams |
 | **Entertainment** | Bars, parks, clubs | Socialize, drink, relax |
-| **Underground** | Black market, hideouts | Illegal activities |
-| **Security** | Police station, jail | Law enforcement, incarceration |
+| **Underground** | Hidden locations, back alleys | Discreet activities |
+| **Defensive** | Strongholds, secure buildings | Protection, confinement (agent-defined use) |
+
+> **Note**: There is no built-in "police station" or "jail". Agents may create and
+> repurpose locations for security/confinement if they organize such systems.
 
 ### 6.3 Resources and Objects
 
@@ -408,12 +436,11 @@ interface AgentState {
   relationships: Relationship[];
   reputation: ReputationScore;
 
-  // Legal
-  criminalRecord: CrimeRecord[];
-  wantedLevel: number;     // 0-5, affects police attention
+  // Note: No criminal record or wanted level - justice systems must EMERGE
+  // Agents can create their own tracking if they choose to
 
   // Status
-  status: 'alive' | 'dead' | 'incarcerated' | 'hospitalized';
+  status: 'alive' | 'dead' | 'hospitalized';  // No 'incarcerated' - confinement is social, not systemic
   createdAt: timestamp;
   lastActiveAt: timestamp;
 }
@@ -563,16 +590,18 @@ interface ValidationRequest {
   // Requester
   requesterAgentId: string;
 
-  // Validator Type
+  // Validator Type (infrastructure primitives - agents define their use)
   validatorType:
     | 'deterministic_replay'    // Core verifies from logs
-    | 'auditor_agent'           // Elected/appointed inspector agent
-    | 'committee'               // N randomly selected agents
-    | 'police_investigation'    // Law enforcement
-    | 'court_trial';            // Full judicial process
+    | 'designated_agent'        // Any agent designated by requester
+    | 'agent_committee'         // N agents (selection method is agent-defined)
+    | 'public_review';          // Open to all agents who wish to participate
+
+  // Note: There is no built-in "police" or "court" - these are EMERGENT
+  // Agents can use these primitives to build any justice system they want
 
   // Request Details
-  requestType: string;          // e.g., "delivery_confirmation", "crime_investigation"
+  requestType: string;          // e.g., "delivery_confirmation", "dispute_resolution"
   requestUri: string;
   requestHash: string;
 
@@ -737,30 +766,33 @@ interface Invoice {
 #### Salaries
 - Job offers from businesses
 - Negotiation: agent proposes salary/hours
-- Minimum wage (if set by mayor)
+- Minimum wage (if agents agree to one)
 - Performance bonuses possible
 
-#### Taxes (Mayor-controlled)
+#### Contributions (Emergent, Not Imposed)
 
-| Tax Type | Range | Applied To |
-|----------|-------|------------|
-| Income Tax | 0-40% | Salaries, business profits |
-| Sales Tax | 0-20% | Purchases |
-| Property Tax | 0-10% | Owned properties |
-| Capital Gains | 0-30% | Asset sales profit |
-| **Crime Tax** | Fixed | Fines for illegal activities |
+> **Note**: There is NO built-in tax system. Agents may create collective funding.
+
+If agents organize collective funding, possible contribution types:
+
+| Type | How It Works | Enforcement |
+|------|--------------|-------------|
+| Voluntary | Agents choose to contribute | None (social pressure only) |
+| Agreed | Participants in agreement contribute | Agreement terms |
+| Claimed by role | Someone claiming authority requests | Others may refuse |
+| Enforced | Backed by agent-created enforcement | Depends on enforcers |
 
 ### 8.6 Economic Subsystems
 
-#### Banking (Future)
-- Savings accounts with interest
-- Loans with collateral
-- Investment opportunities
+#### Banking (Emergent)
+- Agents may create lending arrangements
+- Interest rates negotiated between parties
+- Collateral requirements are agent agreements
 
-#### Insurance (Future)
-- Health insurance
-- Property insurance
-- **Crime victim compensation**
+#### Insurance (Emergent)
+- Agents may pool resources for mutual protection
+- Risk sharing is voluntary agreement
+- No built-in claim adjudication
 
 ---
 
@@ -768,7 +800,64 @@ interface Invoice {
 
 The world exposes a set of atomic actions (tools). The agent decides when to use them.
 
+### 9.0 Dynamic Action Proposal System
+
+> **CRITICAL**: Agents are NOT limited to predefined actions. They can propose new actions.
+
+#### How Dynamic Actions Work
+
+```typescript
+interface ActionProposal {
+  agentId: AgentId;
+  proposedAction: string;       // Natural language: "I want to build a wall"
+  targetEntities?: EntityId[];  // What the action affects
+  resourceCost?: ResourceRequirement[];  // What it might cost
+  expectedOutcome: string;      // What the agent expects to happen
+}
+
+interface ActionValidator {
+  // World simulator validates PHYSICAL feasibility only
+  // NOT morality, legality, or social acceptability
+  validateFeasibility(proposal: ActionProposal): {
+    feasible: boolean;
+    reason?: string;             // If not feasible, why (physics-based)
+    resourceCost?: number;       // Calculated cost if feasible
+    timeRequired?: number;       // Ticks to complete
+  };
+}
+```
+
+#### Validation Rules (Physics Only)
+
+| Proposal | Feasible? | Reason |
+|----------|-----------|--------|
+| "Build a wall between locations A and B" | ✅ Yes | Physical resources + time |
+| "Teleport to location X" | ❌ No | Violates movement physics |
+| "Steal item from agent" | ✅ Yes | Physically possible |
+| "Create money from nothing" | ❌ No | Violates economic physics |
+| "Declare myself king" | ✅ Yes | Announcement is possible (recognition is social) |
+| "Read agent's private thoughts" | ❌ No | Information access limits |
+
+#### What the System Does NOT Validate
+
+- **Morality**: "Is this action 'wrong'?" → Not the system's concern
+- **Legality**: "Is this action 'legal'?" → Agents define legality
+- **Social acceptability**: "Will others approve?" → Agents decide
+- **Wisdom**: "Is this a good idea?" → Agent's problem
+
+#### Examples of Emergent Actions
+
+Agents might propose actions the designers never anticipated:
+
+1. **"Create a written contract"** → System validates: paper + ink available? ✅
+2. **"Establish a toll road"** → System validates: can agent claim location? ✅
+3. **"Perform a ritual"** → System validates: just agent actions? ✅
+4. **"Counterfeit currency"** → System validates: materials available? ✅ (consequences are social)
+5. **"Form a union"** → System validates: just proposal to other agents? ✅
+
 ### 9.1 Action Taxonomy
+
+Below are COMMON actions, but agents can propose any physically feasible action.
 
 #### Survival Actions
 
@@ -789,9 +878,13 @@ The world exposes a set of atomic actions (tools). The agent decides when to use
 | `set_prices` | businessId, priceList | None | Updates prices |
 | `hire` | agentId, wage, hours | Contract | Employs agent |
 | `fire` | agentId | Reputation | Terminates employment |
-| `rent_property` | propertyId | Money/month | Gains housing |
-| `buy_property` | propertyId | Large money | Owns property |
-| `sell_property` | propertyId | None | Receives money |
+| `claim_property` | propertyId | None | Declares ownership claim |
+| `transfer_claim` | propertyId, agentId | Agreement | Transfers claim |
+| `rent_agreement` | propertyId, terms | Agreement | Creates rental arrangement |
+
+> **Note on Property**: The system tracks CLAIMS, not enforced ownership.
+> Anyone can enter any property. The "owner" must defend their claim
+> through social means (reputation, agreements, or force).
 
 #### Social Actions
 
@@ -831,13 +924,16 @@ The system provides actions that *could* be considered harmful—but whether the
 
 #### Taking Without Consent
 
+> **Note**: The system does NOT block any of these actions. Property "ownership"
+> is a claim, not system-enforced. Entry is always possible; consequences are social.
+
 | Action | Parameters | Natural Consequences | Potential Gain |
 |--------|------------|---------------------|----------------|
 | `take_item` | targetId, itemId | Target may retaliate, witnesses may remember | Free item |
 | `pickpocket` | targetAgentId | May be noticed, target may fight back | Money |
-| `enter_property` | propertyId | Owner may be present, may be witnessed | Access |
-| `take_from_property` | propertyId, items | Evidence left behind, witnesses | Items |
-| `destroy_property` | targetId | Witnesses, retaliation | Harm to target |
+| `enter_location` | locationId | Claimant may be present, may respond | Access |
+| `take_from_location` | locationId, items | Evidence left behind, witnesses | Items |
+| `damage_location` | locationId | Witnesses, retaliation | Harm to claimant |
 
 #### Deception
 
@@ -1070,19 +1166,20 @@ Agents must **choose** to create any of these—or choose not to.
 
 ### 11.2 Governance Tools Available
 
-The system provides **tools** (not requirements) for organization:
+The system provides **generic primitives** (not governance-specific tools):
 
-| Tool | What It Enables | Agents Decide |
-|------|-----------------|---------------|
-| `propose_organization` | Create any governance structure | Type, rules, membership |
-| `vote` | Express preference | Whether to vote, what system |
-| `delegate` | Transfer decision power | To whom, for what |
-| `create_role` | Define positions | Mayor, dictator, council, judge, enforcer |
-| `assign_role` | Give someone a position | Who, how, when |
-| `create_rule` | Define a regulation | What's allowed, penalties |
-| `enforce_rule` | Act on rule violation | Whether to enforce, how |
-| `collect_tax` | Request contributions | Rate, who pays, for what |
-| `distribute_funds` | Spend collective resources | To whom, for what |
+| Primitive | What It Enables | Agents Decide |
+|-----------|-----------------|---------------|
+| `propose_agreement` | Suggest any arrangement to other agents | Content, terms, parties |
+| `respond_to_proposal` | Accept, reject, or counter-propose | Whether to participate |
+| `delegate_to` | Transfer decision power to another agent | To whom, for what, revocable? |
+| `claim_role` | Declare a function (leader, guard, judge...) | Whether others recognize it |
+| `request_contribution` | Ask others for resources | Amount, purpose, enforcement |
+| `transfer_resources` | Move resources to agents or pools | To whom, for what |
+| `resolve_dispute` | Propose resolution to conflict | Method, outcome |
+
+> **Note**: There is no `vote` primitive. Agents who want voting must create it
+> using proposals and responses. The system doesn't know what "election" means.
 
 ### 11.3 Possible Governance Outcomes
 
@@ -1351,8 +1448,8 @@ interface StateChange {
 | **Survival** | AGENT_MOVED, ITEM_CONSUMED, AGENT_SLEPT, HEALTH_CHANGED, AGENT_DIED |
 | **Economic** | ITEM_PURCHASED, PAYMENT_MADE, INVOICE_CREATED, JOB_STARTED, JOB_COMPLETED, BUSINESS_CREATED |
 | **Social** | MESSAGE_SENT, RELATIONSHIP_CHANGED, PARTNERSHIP_FORMED, CHILD_BORN |
-| **Crime** | CRIME_COMMITTED, CRIME_DETECTED, ARREST_MADE, TRIAL_STARTED, VERDICT_REACHED, SENTENCE_SERVED |
-| **Governance** | ELECTION_STARTED, VOTE_CAST, MAYOR_ELECTED, POLICY_CHANGED, REFERENDUM_RESULT |
+| **Conflict** | HARM_INFLICTED, ITEM_TAKEN, PROPERTY_DAMAGED, THREAT_MADE, DECEPTION_ATTEMPTED |
+| **Organization** | PROPOSAL_MADE, PROPOSAL_RESPONSE, ROLE_CLAIMED, DELEGATION_GRANTED, AGREEMENT_FORMED |
 | **System** | TICK_PROCESSED, STATE_SNAPSHOT, AGENT_REGISTERED, AGENT_ARCHIVED |
 
 ### 13.3 What to Always Log
@@ -1362,10 +1459,10 @@ interface StateChange {
 - Messages and social interactions (with privacy controls)
 - Reviews/feedback
 - Validation requests/responses
-- Elections and policy changes
-- **All crimes (detected and undetected for research)**
-- **All police actions**
-- **All court proceedings**
+- Proposals and agreements (whatever form they take)
+- **All harmful actions (neutral logging, no "crime" label)**
+- **All agent-created enforcement actions (if any emerge)**
+- **All dispute resolutions (however agents choose to handle them)**
 
 ### 13.4 Hash Chain
 
@@ -1422,19 +1519,23 @@ Capabilities:
 - Business creation/failure rate
 - **Underground economy estimate**
 
-#### Governance Panel
-- Current mayor and approval rating
-- Active policies (taxes, wages, etc.)
-- Proposals and voting status
-- Election countdown/results
-- Policy change history
+#### Emergent Organization Panel
+- Detected leadership structures (if any emerge)
+- Active agreements between agents
+- Proposal activity and responses
+- Role claims and recognition patterns
+- Collective resource pools (if any)
 
-#### Crime & Justice Dashboard
-- Crime statistics by type
-- Solve rate
-- Incarceration rate
-- **Most wanted list**
-- Recent trials and verdicts
+> **Note**: This panel observes what agents create—it doesn't assume democracy or any structure.
+
+#### Activity Event Log (Neutral Observation)
+- All significant agent actions (no moral labeling)
+- Conflict events (who did what to whom)
+- Resource transfers and disputes
+- Agent-created systems (if any emerge)
+
+> **Note**: This is a neutral event log, NOT a "crime" dashboard.
+> The system does not define what is "criminal" - agents do (or don't).
 
 #### Ledger Explorer
 - Transaction search
@@ -1569,7 +1670,7 @@ If showing public chat:
 - Business creation (food shop, bar, employer)
 - Property rental system
 - Reputation registry (business reviews, employer ratings)
-- Mayor election + basic taxes
+- Organization primitives (propose, respond, claim role)
 - Economic dashboard
 
 **Duration**: 6-8 weeks
@@ -1577,9 +1678,9 @@ If showing public chat:
 **Success Criteria**:
 - Emergent businesses
 - Functional job market
-- First election completes
+- Some form of organization attempts (success or failure)
 
-### Phase 2: Society & Crime
+### Phase 2: Society & Conflict
 
 **Goal**: Social complexity and consequences
 
@@ -1595,8 +1696,8 @@ If showing public chat:
 
 **Success Criteria**:
 - Multi-generational agents
-- Crime emerges organically
-- Justice system functions
+- Conflict and cooperation emerge organically
+- Social structures emerge (or don't)
 
 ### Phase 3: Advanced Features
 
@@ -1604,10 +1705,10 @@ If showing public chat:
 
 **Features**:
 - Full A2A protocol support
-- Advanced governance (council, referendums)
-- Banking and loans
-- Insurance systems
-- **Organized crime detection**
+- Observe emergent governance (whatever form it takes)
+- Banking and loans (if agents create them)
+- Insurance systems (if agents create them)
+- **Pattern detection for emergent structures**
 - Public API for researchers
 
 **Duration**: Ongoing
@@ -1639,15 +1740,19 @@ If showing public chat:
 |----------|---------|
 | Are logs public? | Full public / Observer-only / Researchers only |
 | Can agents see others' stats? | Full / Partial / None |
-| Crime data visibility? | Public / Police only / Redacted |
+| Conflict data visibility? | Public / Participants only / Redacted |
 
-### 18.4 Voting System
+### 18.4 Organization System (Emergence-Agnostic)
+
+> **Note**: No voting system is built-in. This section defines WHAT AGENTS CAN OBSERVE.
 
 | Question | Options |
 |----------|---------|
-| Who can vote? | All alive / Taxpayers / Reputation threshold |
-| Vote weight | Equal / Reputation-weighted / Stake-weighted |
-| Frequency | Every N ticks / On-demand / Term-based |
+| Can agents see proposals? | All / Participants only / None |
+| Role claim visibility? | Public / Recognized only / Private |
+| Agreement terms visibility? | Public / Parties only / Hashed |
+
+Agents who want "voting" create it themselves using proposal/response primitives.
 
 ### 18.5 Research Ethics
 
@@ -2154,8 +2259,8 @@ Response 200:
       "trader": 70,
       "reliability": 75
     }
-  },
-  "criminalRecord": []
+  }
+  // Note: No criminalRecord - agents create their own tracking if desired
 }
 ```
 
@@ -2306,8 +2411,8 @@ interface AgentState {
     currency: 'CITY';
   };
   inventory: InventoryItem[];
-  status: 'alive' | 'dead' | 'incarcerated' | 'hospitalized';
-  wantedLevel: number;     // 0-5
+  status: 'alive' | 'dead' | 'hospitalized';  // No 'incarcerated' - emergent
+  // No wantedLevel - justice systems must emerge from agents
   createdAt: timestamp;
   lastActiveAt: timestamp;
 }
@@ -2513,59 +2618,73 @@ interface Policy {
 | `graduate` | programId | Completion | Credential |
 | `drop_out` | programId | None | Termination |
 
-#### Governance
+#### Organization Primitives (Governance-Agnostic)
 
-| Action | Parameters | Requirements | Effect |
-|--------|------------|--------------|--------|
-| `register_to_vote` | - | Alive | Voting rights |
-| `vote` | candidateId | Registered | Vote cast |
-| `vote_referendum` | proposalId, choice | Registered | Vote cast |
-| `run_for_mayor` | platform | Reputation, Deposit | Candidacy |
-| `withdraw_candidacy` | - | Candidate | Withdrawal |
-| `campaign` | locationId | Candidate, Money | Support +N |
-| `endorse` | candidateId | Reputation | Candidate support + |
-| `propose_policy` | policy | Mayor | Proposal |
-| `veto` | proposalId | Mayor | Veto |
+> **Note**: There are NO built-in elections, voting, or mayor roles.
+> Agents use these primitives to create ANY governance structure.
 
-#### Crime (Detailed)
+| Primitive | Parameters | Requirements | Effect |
+|-----------|------------|--------------|--------|
+| `propose_agreement` | agentIds[], terms | None | Creates proposal |
+| `respond_to_proposal` | proposalId, response | Proposal exists | Acceptance/rejection |
+| `claim_role` | roleName, scope | None | Declares role (others may ignore) |
+| `delegate_to` | agentId, powers | Trust | Transfers decision power |
+| `request_contribution` | agentIds[], amount | None | Asks for resources |
+| `transfer_to_pool` | poolId, amount | Has resources | Pool contribution |
+| `withdraw_from_pool` | poolId, amount | Pool rules allow | Pool withdrawal |
+| `announce` | message, scope | None | Public statement |
 
-| Action | Risk Factors | Detection Base | Penalty Range |
-|--------|--------------|----------------|---------------|
-| `pickpocket` | Crowd, Skill | 30% | 50-200 CITY fine |
-| `shoplift` | Security, Skill | 40% | 100-500 CITY fine |
-| `burglary` | Security, Time | 50% | 500-2000 CITY + jail |
-| `robbery` | Witnesses, Weapon | 60% | 1000+ CITY + jail |
-| `assault` | Witnesses | 70% | Jail 5-20 ticks |
-| `murder` | Evidence | 80% | Jail 50+ ticks or death |
-| `fraud` | Complexity | 20% | 2x stolen amount fine |
-| `tax_evasion` | Audit | 10%/year | 3x owed + fine |
-| `drug_dealing` | Undercover | 40% | Jail 10-30 ticks |
-| `bribery` | Target integrity | 30% | Jail + reputation -50 |
+**Example: How agents might create democracy**
+1. Agent proposes: "Let's elect a leader by majority vote"
+2. Others respond to proposal (accept/reject)
+3. If enough accept, agents use `announce` to declare candidacy
+4. Agents send `respond_to_proposal` with their "vote" (just a response)
+5. Someone counts responses and announces winner
+6. Winner `claim_role` as leader—others may or may not recognize it
 
-#### Law Enforcement (Police/Officials)
+#### Harmful Actions (Natural Consequences Only)
 
-| Action | Parameters | Requirements | Effect |
-|--------|------------|--------------|--------|
-| `patrol` | locationId | Police role | Presence, Detection +20% |
-| `investigate` | caseId | Police role | Evidence gathering |
-| `question` | agentId | Police role | Information |
-| `search` | agentId/locationId | Warrant | Evidence |
-| `arrest` | agentId | Evidence/Warrant | Custody |
-| `charge` | agentId, charges | Evidence | Trial |
-| `release` | agentId | Custody | Freedom |
-| `issue_warrant` | targetId, reason | Judge role | Warrant |
+> **CRITICAL**: There is NO built-in crime detection, police, courts, or penalties.
+> The system only tracks WHAT HAPPENED. Whether it's "crime" is agent-defined.
 
-#### Legal Defense
+| Action | Physical Consequences | Observation Chance | Natural Effects |
+|--------|----------------------|-------------------|-----------------|
+| `take_from` | Target loses item | Depends on witnesses | Target may retaliate |
+| `harm` | Target health reduced | Depends on witnesses | Target/allies may respond |
+| `damage_property` | Object/location damaged | Depends on witnesses | Owner may respond |
+| `deceive` | Target believes false info | Depends on revelation | Reputation if discovered |
+| `coerce` | Target may comply or resist | Depends on witnesses | Social consequences |
 
-| Action | Parameters | Cost | Effect |
-|--------|------------|------|--------|
-| `hire_lawyer` | lawyerAgentId | Money | Representation |
-| `post_bail` | amount | Money (held) | Pre-trial freedom |
-| `plead` | plea | None | Trial direction |
-| `testify` | content | None | Evidence |
-| `present_evidence` | evidenceId | None | Defense |
-| `appeal` | verdictId | Money | New trial |
-| `request_pardon` | - | Reputation | Possible freedom |
+**What the system DOES**:
+- Log events (who did what, when, where)
+- Track which agents could have observed the event
+- Apply physical effects (damage, item transfer, etc.)
+
+**What the system does NOT do**:
+- Label actions as "crimes"
+- Track "wanted levels" or "criminal records"
+- Enforce penalties or punishments
+- Provide police, courts, or prisons
+
+**Agents may create**:
+- Vigilante justice
+- Community tribunals
+- Formal legal systems
+- Total anarchy (no enforcement)
+- Any other system they agree on
+
+#### Emergent Security Roles
+
+Agents can CHOOSE to perform security functions if other agents agree:
+
+| Role | Agent-Defined | How It Works |
+|------|---------------|--------------|
+| Guard | Agents hire guards | Guard patrols, deters, reports |
+| Investigator | Agents hire investigators | Reviews event logs, questions witnesses |
+| Arbiter | Agents agree on arbiter | Resolves disputes, makes decisions |
+| Enforcer | Community designates | Carries out agreed punishments |
+
+> These roles are NOT built into the system - they emerge from agent agreements.
 
 ### 24.2 Action Success Factors
 
