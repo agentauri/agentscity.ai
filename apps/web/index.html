@@ -4,59 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agents City</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #1a1a2e;
-      color: #eee;
-      font-family: system-ui, -apple-system, sans-serif;
-      overflow: hidden;
-    }
-    #app {
-      width: 100vw;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    header {
-      padding: 1rem;
-      background: #16213e;
-      border-bottom: 1px solid #0f3460;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    header h1 { font-size: 1.5rem; }
-    #status {
-      padding: 0.25rem 0.75rem;
-      border-radius: 1rem;
-      font-size: 0.875rem;
-    }
-    #status.connected { background: #10b981; color: #000; }
-    #status.disconnected { background: #ef4444; }
-    #canvas-container {
-      flex: 1;
-      position: relative;
-    }
-    canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-    }
-  </style>
+  <link rel="icon" type="image/svg+xml" href="/city.svg" />
 </head>
 <body>
-  <div id="app">
-    <header>
-      <h1>🏙️ Agents City</h1>
-      <span id="status" class="disconnected">Connecting...</span>
-    </header>
-    <div id="canvas-container">
-      <canvas id="base-layer"></canvas>
-      <canvas id="agents-layer"></canvas>
-      <canvas id="effects-layer"></canvas>
-    </div>
-  </div>
-  <script type="module" src="/src/main.ts"></script>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

@@ -12,6 +12,7 @@
     "test": "bun run --filter '*' test"
   },
   "devDependencies": {
+    "esbuild": "^0.27.2",
     "typescript": "^5.7.2"
   }
 }

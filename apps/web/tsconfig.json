@@ -2,11 +2,9 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "outDir": "./dist",
-    "rootDir": "./src"
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "noEmit": true
   },
-  "include": ["src/**/*"],
-  "references": [
-    { "path": "../../packages/shared" }
-  ]
+  "include": ["src/**/*"]
 }
