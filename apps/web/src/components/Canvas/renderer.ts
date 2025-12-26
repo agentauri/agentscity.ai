@@ -608,17 +608,28 @@ export class IsometricRenderer {
 
   /** Check if agent is behind a tall building */
   private isAgentBehindBuilding(gridX: number, gridY: number): boolean {
+    if (!this.editorGrid) return false;
+
     const cellX = Math.floor(gridX);
     const cellY = Math.floor(gridY);
 
-    // Check cells "in front" in isometric perspective (higher x+y values)
-    for (let d = 1; d <= 2; d++) {
-      const checkX = cellX + d;
-      const checkY = cellY + d;
+    // In isometric view, buildings BEHIND the agent (lower x+y, drawn earlier)
+    // extend upward on screen and can visually cover the agent.
+    // Check cells behind/beside agent (negative offsets)
+    const offsets = [
+      { dx: -1, dy: 0 }, { dx: 0, dy: -1 }, { dx: -1, dy: -1 },
+      { dx: -2, dy: 0 }, { dx: 0, dy: -2 }, { dx: -1, dy: -2 },
+      { dx: -2, dy: -1 }, { dx: -2, dy: -2 },
+      { dx: -1, dy: 1 }, { dx: 1, dy: -1 }, // Diagonal cells
+    ];
 
-      if (checkX < GRID_SIZE && checkY < GRID_SIZE && this.editorGrid) {
+    for (const { dx, dy } of offsets) {
+      const checkX = cellX + dx;
+      const checkY = cellY + dy;
+
+      if (checkX >= 0 && checkX < GRID_SIZE && checkY >= 0 && checkY < GRID_SIZE) {
         const cell = this.editorGrid[checkY]?.[checkX];
-        // Buildings are in rows 3-5 of the tileset
+        // Buildings are in rows 3-5 of the tileset (tall structures)
         if (cell && cell.row >= 3 && cell.row <= 5) {
           return true;
         }
