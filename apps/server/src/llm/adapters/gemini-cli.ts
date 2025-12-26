@@ -32,10 +32,12 @@ export class GeminiCLIAdapter extends BaseLLMAdapter {
   }
 
   protected async callLLM(prompt: string): Promise<string> {
-    // Gemini CLI uses -p flag for prompt
-    const proc = Bun.spawn(['gemini', '-p', prompt], {
+    // Gemini CLI uses positional argument for prompt
+    // --sandbox disables tool use to prevent loading project context
+    const proc = Bun.spawn(['gemini', '--sandbox', prompt], {
       stdout: 'pipe',
       stderr: 'pipe',
+      cwd: '/tmp', // Avoid loading project context
     });
 
     // Set timeout

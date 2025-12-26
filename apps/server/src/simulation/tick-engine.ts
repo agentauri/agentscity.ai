@@ -18,6 +18,7 @@ import { appendEvent } from '../db/queries/events';
 import { publishEvent, type WorldEvent } from '../cache/pubsub';
 import { setCachedTick, setCachedWorldState, setCachedAgents } from '../cache/projections';
 import { applyNeedsDecay, type DecayResult } from './needs-decay';
+import { processAgentsTick } from '../agents/orchestrator';
 import type { Agent } from '../db/schema';
 
 export interface TickResult {
@@ -116,40 +117,39 @@ class TickEngine {
     // Get all alive agents
     const agents = await getAliveAgents();
 
-    // Phase 1: COLLECT - Get agent decisions
-    // (For now, agents don't make decisions - this will be added in Sprint 5-6)
-    const actionIntents: ActionIntent[] = [];
-
-    // Phase 2: VALIDATE - Already handled in action handlers
-
-    // Phase 3: RESOLVE - Deterministic conflict resolution (TODO: implement)
-
-    // Phase 4: APPLY - Execute actions
+    // Phase 1-4: COLLECT, VALIDATE, RESOLVE, APPLY
+    // The orchestrator handles all of these phases:
+    // - Builds observations for each agent
+    // - Queues LLM decision jobs
+    // - Executes actions and updates agent state
     let actionsExecuted = 0;
-    for (const intent of actionIntents) {
-      const agent = agents.find((a) => a.id === intent.agentId);
-      if (!agent) continue;
+    try {
+      const agentResults = await processAgentsTick(tick);
+      actionsExecuted = agentResults.filter((r) => r.actionResult?.success).length;
 
-      const handler = this.actionHandlers.get(intent.type);
-      if (!handler) continue;
-
-      try {
-        const result = await handler(intent, agent);
-        if (result.success) {
-          actionsExecuted++;
-          if (result.changes) {
-            await updateAgent(intent.agentId, result.changes);
-          }
-          if (result.events) {
-            allEvents.push(...result.events);
-            for (const event of result.events) {
-              await publishEvent(event);
-            }
-          }
+      // Emit events for agent actions
+      for (const result of agentResults) {
+        if (result.actionResult?.success && result.decision) {
+          const actionEvent: WorldEvent = {
+            id: uuid(),
+            type: `agent_${result.decision.action}` as string,
+            tick,
+            timestamp: Date.now(),
+            agentId: result.agentId,
+            payload: {
+              action: result.decision.action,
+              params: result.decision.params,
+              reasoning: result.decision.reasoning,
+              usedFallback: result.usedFallback,
+              processingTimeMs: result.processingTimeMs,
+            },
+          };
+          allEvents.push(actionEvent);
+          await publishEvent(actionEvent);
         }
-      } catch (error) {
-        console.error(`Action ${intent.type} failed for agent ${intent.agentId}:`, error);
       }
+    } catch (error) {
+      console.error('[TickEngine] Error processing agent decisions:', error);
     }
 
     // Phase 5: DECAY - Apply needs decay
