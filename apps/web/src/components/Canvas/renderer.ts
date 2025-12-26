@@ -778,9 +778,9 @@ export class IsometricRenderer {
 
     ctx.clearRect(0, 0, width, height);
 
-    // Health bars for low health agents
+    // Health bars for low health agents (only show when health is defined and low)
     for (const agent of this.state.agents) {
-      if (agent.health <= 0 || agent.health > 30) continue;
+      if (!agent.health || agent.health <= 0 || agent.health > 30) continue;
 
       const animState = this.animationManager.getState(agent.id);
       if (!animState) continue;
