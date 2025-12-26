@@ -603,6 +603,10 @@ export class IsometricRenderer {
     // Offset to center figure on tile
     const figureY = sy - 10 * scale; // Raise figure slightly above ground
 
+    // Calculate leg positions first (needed for shadow)
+    const legY = figureY + bodyHeight * 0.3;
+    const feetY = legY + legHeight;
+
     // Walking animation offset
     let legOffset = 0;
     if (animState.isMoving) {
@@ -610,16 +614,16 @@ export class IsometricRenderer {
       legOffset = (animState.animFrame - 1) * 3 * scale;
     }
 
-    // Shadow (isometric ellipse on ground)
+    // Shadow (isometric ellipse on ground - positioned at feet level)
     ctx.beginPath();
-    ctx.ellipse(sx, sy + 4 * scale, bodyWidth * 0.8, bodyWidth * 0.3, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.ellipse(sx, feetY + 2 * scale, bodyWidth * 0.7, bodyWidth * 0.25, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
     ctx.fill();
 
     // Selection ring
     if (isSelected) {
       ctx.beginPath();
-      ctx.ellipse(sx, sy + 2 * scale, bodyWidth * 1.5, bodyWidth * 0.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(sx, feetY, bodyWidth * 1.5, bodyWidth * 0.5, 0, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(224, 122, 95, 0.3)';
       ctx.fill();
       ctx.strokeStyle = '#e07a5f';
@@ -628,7 +632,6 @@ export class IsometricRenderer {
     }
 
     // Legs (back leg first for depth)
-    const legY = figureY + bodyHeight * 0.3;
 
     // Back leg
     ctx.fillStyle = this.darkenColor(baseColor, 0.3);
@@ -728,15 +731,15 @@ export class IsometricRenderer {
     ctx.arc(sx + eyeOffsetX + 2 * scale, headY - 2 * scale, 1.5 * scale, 0, Math.PI * 2);
     ctx.fill();
 
-    // State indicator (small colored dot above head)
-    const stateColor = STATE_COLORS[agent.state] || STATE_COLORS.idle;
-    ctx.beginPath();
-    ctx.arc(sx + headRadius * 1.2, headY - headRadius * 0.8, 4 * scale, 0, Math.PI * 2);
-    ctx.fillStyle = stateColor;
-    ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.5 * scale;
-    ctx.stroke();
+    // State indicator removed - was causing visual issues
+    // const stateColor = STATE_COLORS[agent.state] || STATE_COLORS.idle;
+    // ctx.beginPath();
+    // ctx.arc(sx + headRadius * 1.2, headY - headRadius * 0.8, 4 * scale, 0, Math.PI * 2);
+    // ctx.fillStyle = stateColor;
+    // ctx.fill();
+    // ctx.strokeStyle = '#ffffff';
+    // ctx.lineWidth = 1.5 * scale;
+    // ctx.stroke();
 
     // Walking indicator (small motion lines)
     if (animState.isMoving) {
@@ -751,22 +754,19 @@ export class IsometricRenderer {
       }
     }
 
-    // Agent name label
+    // Agent name label (text with shadow, no background box)
     const label = agent.llmType.charAt(0).toUpperCase() + agent.llmType.slice(1);
     ctx.font = `bold ${10 * scale}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
 
-    // Label background
-    const labelWidth = ctx.measureText(label).width + 8 * scale;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.beginPath();
-    ctx.roundRect(sx - labelWidth / 2, sy + 10 * scale, labelWidth, 14 * scale, 3 * scale);
-    ctx.fill();
+    // Text shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillText(label, sx + 1, feetY + 6 * scale + 1);
 
     // Text
-    ctx.fillStyle = '#f4f1de';
-    ctx.fillText(label, sx, sy + 12 * scale);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, sx, feetY + 6 * scale);
   }
 
   /** Draw effects layer (health bars, speech bubbles, UI) */
