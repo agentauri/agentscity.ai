@@ -34,3 +34,4 @@ coverage/
 # Temporary files
 tmp/
 .tmp/
+apps/server/.env
