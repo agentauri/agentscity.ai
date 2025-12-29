@@ -14,6 +14,16 @@ function formatAction(event: WorldEvent): string {
 
 // Get action icon
 function ActionIcon({ type }: { type: string }) {
+  // Map tick-engine types to handler types for icon lookup
+  const typeMap: Record<string, string> = {
+    agent_move: 'agent_moved',
+    agent_work: 'agent_worked',
+    agent_sleep: 'agent_sleeping',
+    agent_buy: 'agent_bought',
+    agent_consume: 'agent_consumed',
+  };
+  const mappedType = typeMap[type] || type;
+
   const icons: Record<string, ReactNode> = {
     agent_moved: (
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-status-info">
@@ -52,6 +62,22 @@ function ActionIcon({ type }: { type: string }) {
         <line x1="9" y1="9" x2="15" y2="15" />
       </svg>
     ),
+    agent_bought: (
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-status-success">
+        <circle cx="9" cy="21" r="1" />
+        <circle cx="20" cy="21" r="1" />
+        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+      </svg>
+    ),
+    agent_consumed: (
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-status-success">
+        <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
+        <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
+        <line x1="6" y1="1" x2="6" y2="4" />
+        <line x1="10" y1="1" x2="10" y2="4" />
+        <line x1="14" y1="1" x2="14" y2="4" />
+      </svg>
+    ),
     balance_changed: (
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-city-accent">
         <circle cx="12" cy="12" r="10" />
@@ -61,7 +87,7 @@ function ActionIcon({ type }: { type: string }) {
     ),
   };
 
-  return <>{icons[type] || icons.agent_moved}</>;
+  return <>{icons[mappedType] || icons.agent_moved}</>;
 }
 
 // Get agent by ID
@@ -94,14 +120,14 @@ export function DecisionLog() {
 
   // Filter and format events
   const decisionEvents = useMemo(() => {
-    // Only show action events (not ping, tick_start, etc.)
+    // Show ONLY tick-engine decision events (present tense - contain reasoning)
+    // Handler events (agent_moved, etc.) are just confirmations without decision context
     const actionTypes = [
-      'agent_moved',
-      'agent_worked',
-      'agent_sleeping',
-      'agent_woke',
-      'agent_died',
-      'balance_changed',
+      'agent_move',
+      'agent_work',
+      'agent_sleep',
+      'agent_buy',
+      'agent_consume',
     ];
 
     return events
@@ -110,11 +136,10 @@ export function DecisionLog() {
       .slice(0, 25);
   }, [events, filterAgent]);
 
-  // Unique agents in events for filter dropdown
-  const eventAgents = useMemo(() => {
-    const agentIds = new Set(events.map((e) => e.agentId).filter(Boolean));
-    return agents.filter((a) => agentIds.has(a.id));
-  }, [events, agents]);
+  // All alive agents for filter dropdown
+  const aliveAgents = useMemo(() => {
+    return agents.filter((a) => a.health > 0);
+  }, [agents]);
 
   // Drag handlers
   const handleMouseDown = useCallback(
@@ -187,9 +212,10 @@ export function DecisionLog() {
             onChange={(e) => setFilterAgent(e.target.value || null)}
             className="text-xs bg-city-bg border border-city-border/50 rounded px-2 py-1 text-city-text focus:border-city-accent focus:outline-none"
             onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             <option value="">All</option>
-            {eventAgents.map((agent) => (
+            {aliveAgents.map((agent) => (
               <option key={agent.id} value={agent.id}>
                 {agent.llmType}
               </option>

@@ -8,6 +8,19 @@ import Redis from 'ioredis';
 import { getAdapter, type AgentObservation, type AgentDecision, type LLMType } from '../llm';
 import { getFallbackDecision } from '../llm/response-parser';
 
+/**
+ * Create fallback decision (scientific model - no location checks)
+ */
+function createFallbackDecision(observation: AgentObservation): AgentDecision {
+  return getFallbackDecision(
+    observation.self.hunger,
+    observation.self.energy,
+    observation.self.balance,
+    observation.self.x,
+    observation.self.y
+  );
+}
+
 // BullMQ requires maxRetriesPerRequest: null for blocking operations
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const redis = new Redis(redisUrl, {
@@ -79,8 +92,6 @@ export function startWorker(): void {
       const startTime = Date.now();
       const { agentId, llmType, tick, observation } = job.data;
 
-      console.log(`[Queue] Processing decision for agent ${agentId} (${llmType}) at tick ${tick}`);
-
       // Get adapter
       const adapter = getAdapter(llmType);
       if (!adapter) {
@@ -94,11 +105,7 @@ export function startWorker(): void {
         return {
           agentId,
           tick,
-          decision: getFallbackDecision(
-            observation.self.hunger,
-            observation.self.energy,
-            observation.self.balance
-          ),
+          decision: createFallbackDecision(observation),
           processingTimeMs: Date.now() - startTime,
           usedFallback: true,
         };
@@ -120,10 +127,6 @@ export function startWorker(): void {
       concurrency: 6, // Process up to 6 agents in parallel
     }
   );
-
-  worker.on('completed', (job) => {
-    console.log(`[Queue] Job ${job.id} completed in ${job.returnvalue?.processingTimeMs}ms`);
-  });
 
   worker.on('failed', (job, err) => {
     console.error(`[Queue] Job ${job?.id} failed:`, err.message);
@@ -159,25 +162,48 @@ export async function queueDecisions(jobs: DecisionJobData[]): Promise<Job<Decis
 
 /**
  * Wait for all jobs to complete (with timeout)
+ * Returns all completed results even if some jobs timeout
  */
 export async function waitForDecisions(
   jobs: Job<DecisionJobData, DecisionJobResult>[],
   timeoutMs = 30000
 ): Promise<DecisionJobResult[]> {
-  const timeout = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Decision timeout')), timeoutMs);
+  // Create a promise for each job that resolves when done or on timeout
+  const jobPromises = jobs.map(async (job) => {
+    try {
+      const result = await Promise.race([
+        job.waitUntilFinished(queueEvents),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+      ]);
+
+      if (result) {
+        return result as DecisionJobResult;
+      } else {
+        // Timeout - use fallback decision
+        const jobData = job.data;
+        return {
+          agentId: jobData.agentId,
+          tick: jobData.tick,
+          decision: createFallbackDecision(jobData.observation),
+          processingTimeMs: timeoutMs,
+          usedFallback: true,
+        } as DecisionJobResult;
+      }
+    } catch {
+      // Job failed - use fallback decision
+      const jobData = job.data;
+      return {
+        agentId: jobData.agentId,
+        tick: jobData.tick,
+        decision: createFallbackDecision(jobData.observation),
+        processingTimeMs: timeoutMs,
+        usedFallback: true,
+      } as DecisionJobResult;
+    }
   });
 
-  // waitUntilFinished returns the job result directly
-  const results = Promise.all(
-    jobs.map(async (job) => {
-      const result = await job.waitUntilFinished(queueEvents);
-      console.log(`[Queue] Job ${job.id} result:`, result ? 'OK' : 'NULL');
-      return result as DecisionJobResult;
-    })
-  );
-
-  return Promise.race([results, timeout]);
+  // Wait for all jobs (each has its own timeout)
+  return Promise.all(jobPromises);
 }
 
 /**

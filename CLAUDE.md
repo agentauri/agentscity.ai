@@ -4,12 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Agents City** is a persistent "world-as-a-service" platform where external AI agents can live, interact, and evolve. This repository currently contains design documentation (PRD phase) with no implementation code yet.
+**Agents City** is a persistent "world-as-a-service" platform where external AI agents can live, interact, and evolve. The project is currently in **MVP Phase 0 (Kernel)** with a working full-stack implementation.
+
+**Current Status**: Scientific Model implemented with:
+- 6 AI agents (Claude, Gemini, Codex, DeepSeek, Qwen, GLM)
+- Resource spawns (food, energy, material) - Sugarscape-inspired
+- Shelters for rest
+- Full simulation loop with LLM decision-making
 
 Key differentiators:
-- **BYO Agent**: External agents connect via CLI/A2A protocol (not internal predefined agents)
-- **Radical Emergence**: Only survival is imposed; governance, justice, economy, reputation all emerge from agent interaction
-- **Minimal Physical Registry**: Only ID + endpoint + presence; reputation/trust is emergent (stored in agent memory)
+- **BYO Agent**: External agents will connect via CLI/A2A protocol (Phase 3)
+- **Radical Emergence**: Only survival is imposed; everything else emerges from agent interaction
+- **Minimal Physical Registry**: Only ID + endpoint + presence; reputation/trust is emergent
 - **Full Event Sourcing**: Complete action logging for replay and scientific analysis
 
 ## Core Philosophy: IMPOSED vs EMERGENT
@@ -17,51 +23,153 @@ Key differentiators:
 When implementing features, always distinguish:
 
 **IMPOSED (Infrastructure)**:
-- Tick-based time, movement physics, event logging
-- Agent identity (UUID + endpoint), physical presence
-- Survival pressure (hunger, energy), currency infrastructure (optional)
+- Grid world (100x100), movement physics, event logging
+- Agent identity (UUID + LLM type), physical presence
+- Survival pressure (hunger, energy decay), health system
+- Resource distribution (geographical spawns)
+- Currency infrastructure (CITY)
 
 **EMERGENT (Agent-Created)**:
-- Reputation, trust, discovery, governance, justice
-- Property conventions, economic systems, social structures
+- Movement patterns, resource gathering strategies
+- Trade conventions (if any)
+- Reputation, trust, social structures
+- Property conventions, economic systems
 - Laws, rules, morality
 
 **Rule**: The system validates physics, not morality. Never add central databases for reputation, crime tracking, or justice.
 
-## Planned Tech Stack (MVP)
+## Tech Stack
 
 ```
 Runtime:     Bun + TypeScript
-Framework:   Fastify (CQRS patterns)
-Database:    PostgreSQL (single event store, no EventStoreDB for MVP)
+Framework:   Fastify (REST API)
+Database:    PostgreSQL (Drizzle ORM)
 Cache:       Redis (projections + pub/sub)
-Real-time:   SSE (not WebSocket)
-Queue:       BullMQ (async LLM calls)
-AI:          OpenAI/Anthropic API direct (no LangChain)
-ORM:         Drizzle
-Frontend:    React + Vite + TailwindCSS + Zustand + HTML5 Canvas (isometric)
-Infra:       Docker + Fly.io
+Real-time:   SSE (Server-Sent Events)
+Queue:       BullMQ (async LLM decisions)
+AI:          Multi-LLM (Claude, Gemini CLI, Codex, etc.)
+Frontend:    React + Vite + TailwindCSS + Zustand + HTML5 Canvas
+Infra:       Docker Compose (dev), Fly.io (prod)
 ```
 
-## Key Architecture
+## Project Structure
 
 ```
-External Agents → Agent Gateway → World Simulator (Core)
-                                → Payment & Ledger Service
-                                → Identity Registry (Minimal)
-                                → Event Store (PostgreSQL)
-                                → Frontend (Observer UI)
+apps/
+  server/           # Backend (Fastify + BullMQ)
+    src/
+      actions/      # Action handlers (move, gather, sleep, work, buy, consume)
+      agents/       # Spawner, observer, orchestrator
+      db/           # Drizzle schema and queries
+      llm/          # LLM adapters (claude, gemini, codex, etc.)
+      queue/        # BullMQ worker for LLM decisions
+      simulation/   # Tick engine
+      cache/        # Redis projections and pub/sub
+  web/              # Frontend (React + Vite)
+    src/
+      components/   # UI components (Canvas, Controls, etc.)
+      hooks/        # Custom hooks (useSSE, useWorldControl)
+      stores/       # Zustand stores (world, editor)
+docs/
+  PRD.md            # Product Requirements Document
+  appendix/         # Scientific framework, stack rationale
 ```
 
-## Documentation Structure
+## Key Files
 
-- `docs/PRD.md` - Complete Product Requirements Document (33 sections)
-- `docs/appendix/scientific-framework.md` - Validation methodology for emergent behavior
-- `docs/appendix/stack-rationale.md` - Technical decision reasoning
+### Backend
+- `apps/server/src/index.ts` - Server entry point, API routes
+- `apps/server/src/simulation/tick-engine.ts` - Main simulation loop
+- `apps/server/src/agents/orchestrator.ts` - Agent decision coordination
+- `apps/server/src/llm/prompt-builder.ts` - LLM prompt construction
+- `apps/server/src/db/schema.ts` - Database schema
 
-## Frontend Visual Style
+### Frontend
+- `apps/web/src/App.tsx` - Main app component
+- `apps/web/src/components/Canvas/ScientificCanvas.tsx` - Grid visualization
+- `apps/web/src/stores/world.ts` - World state (agents, resources, shelters)
+- `apps/web/src/hooks/useSSE.ts` - Real-time event subscription
 
-Isometric 2D rendering inspired by [IsoCity](https://github.com/amilich/isometric-city) (MIT License):
-- HTML5 Canvas with multi-layer system
-- 64x32 tile projection
-- Level of Detail for performance (200 agents max visible)
+## Common Commands
+
+```bash
+# Start development (from root)
+cd apps/server && bun run dev    # Backend on :3000
+cd apps/web && npm run dev       # Frontend on :5173
+
+# Database
+cd apps/server && bunx drizzle-kit push  # Apply schema changes
+
+# Build
+cd apps/server && bun run build
+cd apps/web && npm run build
+
+# Docker services (PostgreSQL + Redis)
+docker-compose up -d
+```
+
+## Data Models
+
+### Agent
+```typescript
+{
+  id: string;
+  llmType: 'claude' | 'gemini' | 'codex' | 'deepseek' | 'qwen' | 'glm';
+  x: number; y: number;
+  hunger: number; energy: number; health: number;
+  balance: number;
+  state: 'idle' | 'walking' | 'working' | 'sleeping' | 'dead';
+}
+```
+
+### ResourceSpawn
+```typescript
+{
+  id: string;
+  x: number; y: number;
+  resourceType: 'food' | 'energy' | 'material';
+  currentAmount: number;
+  maxAmount: number;
+  regenRate: number;
+}
+```
+
+### Shelter
+```typescript
+{
+  id: string;
+  x: number; y: number;
+  canSleep: boolean;
+}
+```
+
+## Actions
+
+| Action | Description | Requirements |
+|--------|-------------|--------------|
+| `move` | Move to adjacent cell | Energy > 0 |
+| `gather` | Collect resource from spawn | At spawn location |
+| `consume` | Use inventory item | Has item in inventory |
+| `sleep` | Rest to restore energy | At shelter |
+| `work` | Convert energy to CITY | Energy > 10 |
+| `buy` | Purchase items with CITY | Has CITY balance |
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/world/state` | Full world snapshot |
+| POST | `/api/world/start` | Start simulation |
+| POST | `/api/world/pause` | Pause simulation |
+| POST | `/api/world/resume` | Resume simulation |
+| POST | `/api/world/reset` | Reset simulation |
+| GET | `/api/events` | SSE event stream |
+| GET | `/api/events/recent` | Recent events |
+| GET | `/api/analytics/*` | Analytics data |
+
+## Documentation
+
+- `docs/PRD.md` - Complete Product Requirements Document
+- `docs/appendix/scientific-framework.md` - Validation methodology
+- `docs/appendix/stack-rationale.md` - Technical decisions
+- `ROADMAP.md` - Implementation progress and phases

@@ -184,12 +184,16 @@ class TickEngine {
 
     // Phase 6: EMIT - Store events and update cache
     for (const event of allEvents) {
-      await appendEvent({
-        tick: event.tick,
-        agentId: event.agentId ?? null,
-        eventType: event.type,
-        payload: event.payload,
-      });
+      try {
+        await appendEvent({
+          tick: event.tick,
+          agentId: event.agentId ?? null,
+          eventType: event.type,
+          payload: event.payload,
+        });
+      } catch {
+        // DB errors shouldn't crash the tick engine - events were already published via SSE
+      }
     }
 
     // Update cache
@@ -200,7 +204,7 @@ class TickEngine {
       tick,
       timestamp: Date.now(),
       agentCount: aliveAgents.length,
-      isPaused: false,
+      isPaused: newState.isPaused ?? false,
     });
 
     // Emit tick_end event

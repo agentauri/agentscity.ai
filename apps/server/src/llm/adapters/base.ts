@@ -6,6 +6,19 @@ import type { LLMAdapter, LLMType, LLMMethod, AgentObservation, AgentDecision } 
 import { buildFullPrompt } from '../prompt-builder';
 import { parseResponse, getFallbackDecision } from '../response-parser';
 
+/**
+ * Create fallback decision (scientific model - no location checks)
+ */
+function createFallbackDecision(observation: AgentObservation): AgentDecision {
+  return getFallbackDecision(
+    observation.self.hunger,
+    observation.self.energy,
+    observation.self.balance,
+    observation.self.x,
+    observation.self.y
+  );
+}
+
 export abstract class BaseLLMAdapter implements LLMAdapter {
   abstract readonly type: LLMType;
   abstract readonly method: LLMMethod;
@@ -41,20 +54,12 @@ export abstract class BaseLLMAdapter implements LLMAdapter {
 
       // Fallback if parsing failed
       console.warn(`${this.name}: Failed to parse response, using fallback`);
-      return getFallbackDecision(
-        observation.self.hunger,
-        observation.self.energy,
-        observation.self.balance
-      );
+      return createFallbackDecision(observation);
     } catch (error) {
       console.error(`${this.name}: Error during decision:`, error);
 
       // Return fallback decision
-      return getFallbackDecision(
-        observation.self.hunger,
-        observation.self.energy,
-        observation.self.balance
-      );
+      return createFallbackDecision(observation);
     }
   }
 }

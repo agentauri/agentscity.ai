@@ -196,13 +196,17 @@ export async function applyNeedsDecay(agent: Agent, tick: number): Promise<Decay
 
     await killAgent(agent.id);
   } else {
-    // Update agent state
-    await updateAgent(agent.id, {
+    // Update agent state - only change state if forcing sleep due to critical energy
+    // Otherwise preserve current state (set by actions)
+    const updates: Parameters<typeof updateAgent>[1] = {
       hunger: newHunger,
       energy: newEnergy,
       health: newHealth,
-      state: newEnergy < CONFIG.criticalEnergyThreshold ? 'sleeping' : agent.state,
-    });
+    };
+    if (newEnergy < CONFIG.criticalEnergyThreshold) {
+      updates.state = 'sleeping';
+    }
+    await updateAgent(agent.id, updates);
   }
 
   // Emit needs_updated event

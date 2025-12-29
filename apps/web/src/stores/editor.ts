@@ -3,10 +3,49 @@ import { useShallow } from 'zustand/react/shallow';
 import { type TileDef, type TileCatalogEntry, GRASS_TILE, GRID_SIZE, createEmptyGrid } from '../utils/tiles';
 
 // =============================================================================
+// LocalStorage Persistence
+// =============================================================================
+
+const STORAGE_KEY = 'agentscity_grid';
+
+function loadGridFromStorage(): TileDef[][] | null {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Validate it's a 2D array with correct dimensions
+      if (Array.isArray(parsed) && parsed.length === GRID_SIZE &&
+          parsed.every((row: unknown) => Array.isArray(row) && (row as unknown[]).length === GRID_SIZE)) {
+        return parsed as TileDef[][];
+      }
+    }
+  } catch (e) {
+    console.warn('[Editor] Failed to load grid from localStorage:', e);
+  }
+  return null;
+}
+
+function saveGridToStorage(grid: TileDef[][]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(grid));
+  } catch (e) {
+    console.warn('[Editor] Failed to save grid to localStorage:', e);
+  }
+}
+
+function clearGridFromStorage(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {
+    console.warn('[Editor] Failed to clear grid from localStorage:', e);
+  }
+}
+
+// =============================================================================
 // Types
 // =============================================================================
 
-export type AppMode = 'editor' | 'simulation';
+export type AppMode = 'editor' | 'simulation' | 'analytics';
 
 export interface EditorState {
   // App mode
@@ -40,13 +79,19 @@ export interface EditorState {
 // Store
 // =============================================================================
 
+// Load initial grid from localStorage or create empty
+const storedGrid = loadGridFromStorage();
+const initialGrid = storedGrid || createEmptyGrid();
+// If we loaded a grid from storage, use it as lastSavedGrid too
+const initialLastSavedGrid = storedGrid ? storedGrid.map(row => row.map(cell => ({ ...cell }))) : null;
+
 export const useEditorStore = create<EditorState>((set, get) => ({
   // Initial state
   mode: 'editor',
-  grid: createEmptyGrid(),
+  grid: initialGrid,
   selectedTile: null,
   isPaused: false,
-  lastSavedGrid: null,
+  lastSavedGrid: initialLastSavedGrid,
 
   // Actions
   setMode: (mode) => set({ mode }),
@@ -72,6 +117,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     );
 
     set({ grid: newGrid });
+
+    // Auto-save to localStorage
+    saveGridToStorage(newGrid);
   },
 
   eraseTile: (gridX, gridY) => {
@@ -93,11 +141,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     );
 
     set({ grid: newGrid });
+
+    // Auto-save to localStorage
+    saveGridToStorage(newGrid);
   },
 
-  setGrid: (grid) => set({ grid }),
+  setGrid: (grid) => {
+    set({ grid });
+    saveGridToStorage(grid);
+  },
 
-  clearGrid: () => set({ grid: createEmptyGrid() }),
+  clearGrid: () => {
+    const emptyGrid = createEmptyGrid();
+    set({ grid: emptyGrid });
+    clearGridFromStorage();
+  },
 
   setPaused: (paused) => set({ isPaused: paused }),
 
@@ -106,6 +164,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     // Deep copy the grid
     const savedGrid = grid.map(row => row.map(cell => ({ ...cell })));
     set({ lastSavedGrid: savedGrid });
+    // Also persist to localStorage
+    saveGridToStorage(grid);
   },
 
   restoreLastSavedGrid: () => {
@@ -114,6 +174,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Deep copy to restore
       const restoredGrid = lastSavedGrid.map(row => row.map(cell => ({ ...cell })));
       set({ grid: restoredGrid });
+      // Also update localStorage
+      saveGridToStorage(restoredGrid);
     }
   },
 }));
@@ -139,6 +201,9 @@ export const useIsEditorMode = () =>
 
 export const useIsSimulationMode = () =>
   useEditorStore((state) => state.mode === 'simulation');
+
+export const useIsAnalyticsMode = () =>
+  useEditorStore((state) => state.mode === 'analytics');
 
 export const useHasLastSavedGrid = () =>
   useEditorStore((state) => state.lastSavedGrid !== null);

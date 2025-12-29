@@ -2,7 +2,7 @@
  * LLM Adapter Types
  */
 
-import type { Agent, Location } from '../db/schema';
+import type { Agent, Shelter, ResourceSpawn } from '../db/schema';
 import type { ActionType, ActionParams } from '../actions/types';
 
 // =============================================================================
@@ -32,15 +32,36 @@ export interface AgentObservation {
     state: string;
   };
 
-  // What's around
+  // What's around (scientific model)
   nearbyAgents: NearbyAgent[];
-  nearbyLocations: NearbyLocation[];
+  nearbyResourceSpawns?: NearbyResourceSpawn[]; // New: resource spawn points
+  nearbyShelters?: NearbyShelter[]; // New: shelter locations
+  nearbyLocations: NearbyLocation[]; // Legacy: for backwards compatibility
 
   // What can be done
   availableActions: AvailableAction[];
 
   // Recent history
   recentEvents: RecentEvent[];
+
+  // Inventory
+  inventory: InventoryEntry[];
+
+  // Phase 1: Memory and relationships
+  recentMemories?: AgentMemoryEntry[];
+  relationships?: Record<string, RelationshipInfo>; // Key is other agent ID
+
+  // Phase 1: Emergence Observation (Claims & Naming)
+  nearbyClaims?: NearbyClaim[]; // Claims in the area
+  nearbyLocationNames?: Record<string, LocationNameEntry[]>; // Key is "x,y" coordinate
+
+  // Phase 2: Social Discovery
+  knownAgents?: KnownAgentEntry[]; // Agents known through direct contact or referral
+}
+
+export interface InventoryEntry {
+  type: string;
+  quantity: number;
 }
 
 export interface NearbyAgent {
@@ -59,6 +80,23 @@ export interface NearbyLocation {
   y: number;
 }
 
+export interface NearbyResourceSpawn {
+  id: string;
+  x: number;
+  y: number;
+  resourceType: string; // 'food' | 'energy' | 'material'
+  currentAmount: number;
+  maxAmount: number;
+}
+
+export interface NearbyShelter {
+  id: string;
+  x: number;
+  y: number;
+  canSleep: boolean;
+  ownerId?: string;
+}
+
 export interface AvailableAction {
   type: ActionType;
   description: string;
@@ -73,6 +111,60 @@ export interface RecentEvent {
   type: string;
   tick: number;
   description: string;
+}
+
+// =============================================================================
+// Phase 1: Memory and Relationship Types
+// =============================================================================
+
+export interface AgentMemoryEntry {
+  tick: number;
+  content: string;
+  type: string; // 'observation' | 'action' | 'interaction' | 'reflection'
+  importance: number;
+  emotionalValence: number;
+}
+
+export interface RelationshipInfo {
+  trustScore: number; // -100 to +100
+  interactionCount: number;
+  lastInteractionTick?: number;
+}
+
+// =============================================================================
+// Phase 1: Emergence Observation Types (Claims & Naming)
+// =============================================================================
+
+export interface NearbyClaim {
+  id: string;
+  agentId: string;
+  x: number;
+  y: number;
+  claimType: 'territory' | 'home' | 'resource' | 'danger' | 'meeting_point';
+  description?: string;
+  strength: number;
+  claimedAtTick: number;
+}
+
+export interface LocationNameEntry {
+  name: string;
+  usageCount: number;
+  isConsensus: boolean;
+}
+
+// =============================================================================
+// Phase 2: Social Discovery Types
+// =============================================================================
+
+export interface KnownAgentEntry {
+  id: string;
+  discoveryType: 'direct' | 'referral';
+  referredBy?: string;
+  referralDepth: number;
+  lastKnownPosition?: { x: number; y: number };
+  reputationClaim?: { sentiment: number; claim: string };
+  dangerWarning?: string;
+  informationAge: number; // ticks since information was received
 }
 
 // =============================================================================

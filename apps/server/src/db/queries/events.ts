@@ -7,13 +7,22 @@ import { db, events, type Event, type NewEvent } from '../index';
 
 let globalVersion = 0;
 
-export async function appendEvent(event: Omit<NewEvent, 'version'>): Promise<Event> {
+export async function appendEvent(event: Omit<NewEvent, 'version'>): Promise<Event | null> {
   globalVersion++;
-  const result = await db
-    .insert(events)
-    .values({ ...event, version: globalVersion })
-    .returning();
-  return result[0];
+  try {
+    const result = await db
+      .insert(events)
+      .values({ ...event, version: globalVersion })
+      .returning();
+    return result[0];
+  } catch (error: unknown) {
+    // Handle duplicate key error gracefully (can happen on server restart with pending jobs)
+    const errorString = String(error);
+    if (errorString.includes('duplicate key') || errorString.includes('unique constraint')) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function getEventsByAgent(agentId: string, limit = 100): Promise<Event[]> {

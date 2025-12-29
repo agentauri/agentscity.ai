@@ -8,7 +8,10 @@
 import { v4 as uuid } from 'uuid';
 import type { ActionIntent, ActionResult, MoveParams } from '../types';
 import type { Agent } from '../../db/schema';
-import { isValidPosition, isValidMove, getMovementCost } from '../../world/grid';
+import { isValidPosition, getPath, getDistance } from '../../world/grid';
+
+// Energy cost per tile moved
+const ENERGY_PER_TILE = 1;
 
 export async function handleMove(
   intent: ActionIntent<MoveParams>,
@@ -24,19 +27,29 @@ export async function handleMove(
     };
   }
 
-  // Check if move is valid (adjacent only)
   const from = { x: agent.x, y: agent.y };
-  const to = { x: toX, y: toY };
+  const finalDestination = { x: toX, y: toY };
 
-  if (!isValidMove(from, to)) {
+  // Already at destination?
+  if (from.x === toX && from.y === toY) {
     return {
       success: false,
-      error: `Invalid move: can only move to adjacent positions`,
+      error: `Already at destination (${toX}, ${toY})`,
     };
   }
 
-  // Calculate energy cost
-  const energyCost = getMovementCost(from, to);
+  // Calculate path and get FIRST step only
+  const path = getPath(from, finalDestination);
+  if (path.length === 0) {
+    return {
+      success: false,
+      error: `No path to destination (${toX}, ${toY})`,
+    };
+  }
+
+  // Take only the first step
+  const nextStep = path[0];
+  const energyCost = ENERGY_PER_TILE;
 
   // Check if agent has enough energy
   if (agent.energy < energyCost) {
@@ -46,12 +59,15 @@ export async function handleMove(
     };
   }
 
-  // Success - return changes and events
+  // Calculate remaining distance after this step
+  const remainingDistance = getDistance(nextStep, finalDestination);
+
+  // Success - move one step towards destination
   return {
     success: true,
     changes: {
-      x: toX,
-      y: toY,
+      x: nextStep.x,
+      y: nextStep.y,
       energy: agent.energy - energyCost,
       state: 'walking',
     },
@@ -64,7 +80,9 @@ export async function handleMove(
         agentId: agent.id,
         payload: {
           from,
-          to,
+          to: nextStep,
+          finalDestination,
+          remainingDistance,
           energyCost,
         },
       },

@@ -8,6 +8,7 @@ import { v4 as uuid } from 'uuid';
 import type { ActionIntent, ActionResult, ConsumeParams } from '../types';
 import type { Agent } from '../../db/schema';
 import { ITEM_EFFECTS } from './buy';
+import { getInventoryItem, removeFromInventory } from '../../db/queries/inventory';
 
 export async function handleConsume(
   intent: ActionIntent<ConsumeParams>,
@@ -24,8 +25,17 @@ export async function handleConsume(
     };
   }
 
-  // TODO: Check if agent has the item in inventory
-  // For MVP, we assume agent has the item if they bought it
+  // Check if agent has the item in inventory
+  const inventoryItem = await getInventoryItem(agent.id, itemType);
+  if (!inventoryItem || inventoryItem.quantity < 1) {
+    return {
+      success: false,
+      error: `No ${itemType} in inventory`,
+    };
+  }
+
+  // Remove item from inventory
+  await removeFromInventory(agent.id, itemType, 1);
 
   // Calculate new needs values
   const changes: Partial<Agent> = {};

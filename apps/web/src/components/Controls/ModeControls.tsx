@@ -1,126 +1,66 @@
-import { useState, useRef } from 'react';
-import { useEditorStore, useAppMode, useIsPaused, useHasLastSavedGrid } from '../../stores/editor';
-import { downloadAsJson, openFileDialog, saveToUrlHash } from '../../utils/cityCodec';
+import { useState } from 'react';
+import { useEditorStore, useAppMode, useIsPaused } from '../../stores/editor';
 
 interface ModeControlsProps {
-  onStartSimulation: () => void;
+  onStartSimulation: () => Promise<void>;
   onReset: () => void;
+  onPause?: () => Promise<void>;
+  onResume?: () => Promise<void>;
 }
 
-export function ModeControls({ onStartSimulation, onReset }: ModeControlsProps) {
+export function ModeControls({ onStartSimulation, onReset, onPause, onResume }: ModeControlsProps) {
   const mode = useAppMode();
   const isPaused = useIsPaused();
-  const hasLastSaved = useHasLastSavedGrid();
-  const { setPaused, grid, setGrid, saveCurrentGrid, clearGrid } = useEditorStore();
-  const [showSaveMenu, setShowSaveMenu] = useState(false);
-  const saveMenuRef = useRef<HTMLDivElement>(null);
+  const { setMode, setPaused } = useEditorStore();
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Editor mode controls
+  // Handle pause/resume with BE sync
+  const handlePauseToggle = async () => {
+    setIsLoading(true);
+    try {
+      if (isPaused) {
+        await onResume?.();
+        setPaused(false);
+      } else {
+        await onPause?.();
+        setPaused(true);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Ready mode (waiting to start) - scientific model doesn't need editor
   if (mode === 'editor') {
     return (
       <div className="flex items-center gap-2">
         {/* Mode badge */}
         <span className="px-2 py-0.5 bg-city-accent/20 text-city-accent text-xs font-medium rounded">
-          Editor
+          Ready
         </span>
 
-        {/* Save dropdown */}
-        <div className="relative" ref={saveMenuRef}>
-          <button
-            type="button"
-            onClick={() => setShowSaveMenu(!showSaveMenu)}
-            className="px-3 py-1.5 bg-city-surface-hover hover:bg-city-border/50 text-city-text text-xs font-medium rounded border border-city-border/50 flex items-center gap-1"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-              <polyline points="17 21 17 13 7 13 7 21" />
-              <polyline points="7 3 7 8 15 8" />
-            </svg>
-            Save
-            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
-
-          {showSaveMenu && (
-            <div className="absolute top-full left-0 mt-1 bg-city-surface border border-city-border rounded-md shadow-lg z-50 min-w-[140px]">
-              <button
-                type="button"
-                onClick={() => {
-                  downloadAsJson(grid);
-                  setShowSaveMenu(false);
-                }}
-                className="w-full px-3 py-2 text-left text-xs text-city-text hover:bg-city-surface-hover"
-              >
-                Download JSON
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  saveToUrlHash(grid);
-                  setShowSaveMenu(false);
-                  // Copy URL to clipboard
-                  navigator.clipboard.writeText(window.location.href);
-                  alert('URL copied to clipboard!');
-                }}
-                className="w-full px-3 py-2 text-left text-xs text-city-text hover:bg-city-surface-hover border-t border-city-border/30"
-              >
-                Copy Link
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Load button */}
+        {/* Start button - scientific mode starts immediately */}
         <button
           type="button"
+          disabled={isLoading}
           onClick={async () => {
+            setIsLoading(true);
             try {
-              const loadedGrid = await openFileDialog();
-              setGrid(loadedGrid);
-            } catch {
-              // User cancelled or error
+              await onStartSimulation();
+            } finally {
+              setIsLoading(false);
             }
           }}
-          className="px-3 py-1.5 bg-city-surface-hover hover:bg-city-border/50 text-city-text text-xs font-medium rounded border border-city-border/50 flex items-center gap-1"
+          className="px-4 py-1.5 bg-city-accent hover:bg-city-accent-light text-white text-xs font-semibold rounded flex items-center gap-1.5 disabled:opacity-50"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="17 8 12 3 7 8" />
-            <line x1="12" y1="3" x2="12" y2="15" />
-          </svg>
-          Load
-        </button>
-
-        {/* Clear button */}
-        <button
-          type="button"
-          onClick={() => {
-            if (confirm('Clear the entire city? This cannot be undone.')) {
-              clearGrid();
-            }
-          }}
-          className="px-3 py-1.5 bg-city-surface-hover hover:bg-red-500/20 text-city-text-muted hover:text-red-400 text-xs font-medium rounded border border-city-border/50"
-        >
-          Clear
-        </button>
-
-        {/* Divider */}
-        <div className="w-px h-6 bg-city-border/50 mx-1" />
-
-        {/* Start button */}
-        <button
-          type="button"
-          onClick={() => {
-            saveCurrentGrid();
-            onStartSimulation();
-          }}
-          className="px-4 py-1.5 bg-city-accent hover:bg-city-accent-light text-white text-xs font-semibold rounded flex items-center gap-1.5"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-            <polygon points="5 3 19 12 5 21 5 3" />
-          </svg>
-          Start Simulation
+          {isLoading ? (
+            <span className="animate-spin">⏳</span>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+          )}
+          {isLoading ? 'Starting...' : 'Start Simulation'}
         </button>
       </div>
     );
@@ -141,8 +81,9 @@ export function ModeControls({ onStartSimulation, onReset }: ModeControlsProps) 
       {/* Pause/Resume button */}
       <button
         type="button"
-        onClick={() => setPaused(!isPaused)}
-        className="px-3 py-1.5 bg-city-surface-hover hover:bg-city-border/50 text-city-text text-xs font-medium rounded border border-city-border/50 flex items-center gap-1"
+        onClick={handlePauseToggle}
+        disabled={isLoading}
+        className="px-3 py-1.5 bg-city-surface-hover hover:bg-city-border/50 text-city-text text-xs font-medium rounded border border-city-border/50 flex items-center gap-1 disabled:opacity-50"
       >
         {isPaused ? (
           <>
@@ -162,11 +103,24 @@ export function ModeControls({ onStartSimulation, onReset }: ModeControlsProps) 
         )}
       </button>
 
+      {/* Analytics button */}
+      <button
+        type="button"
+        onClick={() => setMode('analytics')}
+        className="px-3 py-1.5 bg-city-accent/20 hover:bg-city-accent/30 text-city-accent text-xs font-medium rounded border border-city-accent/30 flex items-center gap-1"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 3v18h18" />
+          <path d="m19 9-5 5-4-4-3 3" />
+        </svg>
+        Analytics
+      </button>
+
       {/* Reset button */}
       <button
         type="button"
         onClick={() => {
-          if (confirm('Reset simulation? You can edit the city again.')) {
+          if (confirm('Reset simulation? This will clear all agents and resources.')) {
             onReset();
           }
         }}

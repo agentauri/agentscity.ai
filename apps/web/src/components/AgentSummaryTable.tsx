@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react';
-import { useAgents, useEvents, type Agent, type WorldEvent } from '../stores/world';
+import { useAgents, useEvents, useWorldStore, type Agent, type WorldEvent } from '../stores/world';
 
 // LLM types that are always visible
 const ALWAYS_VISIBLE_LLMS = ['claude', 'codex', 'gemini'];
@@ -31,6 +31,13 @@ const StrategyIcon = ({ type }: { type: string }) => {
         <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
       </svg>
     ),
+    gatherer: (
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-400">
+        <path d="M12 2a10 10 0 1 0 10 10" />
+        <path d="M12 12V2" />
+        <path d="M12 12l7-7" />
+      </svg>
+    ),
     idle: (
       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-city-text-muted">
         <circle cx="12" cy="12" r="10" />
@@ -52,45 +59,49 @@ const StrategyIcon = ({ type }: { type: string }) => {
 
 // Strategy calculation based on recent events
 function calculateStrategy(agentId: string, events: WorldEvent[]): { type: string; label: string } {
-  const agentEvents = events.filter((e) => e.agentId === agentId).slice(0, 20);
+  // Only count actual action events (filter out decay notifications, tick events, etc.)
+  const actionEvents = events
+    .filter((e) => e.agentId === agentId && e.type.startsWith('agent_'))
+    .slice(0, 20);
 
-  if (agentEvents.length === 0) {
+  if (actionEvents.length === 0) {
     return { type: 'idle', label: 'Idle' };
   }
 
   // Check if last action was fallback
-  const lastEvent = agentEvents[0];
+  const lastEvent = actionEvents[0];
   if (lastEvent?.payload?.usedFallback) {
     return { type: 'idle', label: 'Fallback' };
   }
 
   // Count action types
   const actionCounts: Record<string, number> = {};
-  for (const event of agentEvents) {
+  for (const event of actionEvents) {
     const action = (event.payload?.action as string) || event.type;
     actionCounts[action] = (actionCounts[action] || 0) + 1;
   }
 
-  const total = agentEvents.length;
+  const total = actionEvents.length;
   const workCount = (actionCounts['work'] || 0) + (actionCounts['agent_worked'] || 0);
-  const moveCount = (actionCounts['move'] || 0) + (actionCounts['agent_moved'] || 0);
-  const sleepCount = (actionCounts['sleep'] || 0) + (actionCounts['agent_sleeping'] || 0);
+  const moveCount = (actionCounts['move'] || 0) + (actionCounts['agent_move'] || 0);
+  const sleepCount = (actionCounts['sleep'] || 0) + (actionCounts['agent_sleep'] || 0);
+  const gatherCount = (actionCounts['gather'] || 0) + (actionCounts['agent_gather'] || 0);
   const consumeCount = (actionCounts['buy'] || 0) + (actionCounts['consume'] || 0);
 
-  // Determine dominant strategy
-  if (workCount / total > 0.5) {
-    return workCount > 10
-      ? { type: 'worker', label: 'Hard Worker' }
-      : { type: 'worker', label: 'Worker' };
-  }
-  if (moveCount / total > 0.5) {
-    return { type: 'explorer', label: 'Explorer' };
-  }
-  if (sleepCount / total > 0.4) {
-    return { type: 'sleeper', label: 'Sleeper' };
-  }
-  if (consumeCount / total > 0.3) {
-    return { type: 'consumer', label: 'Consumer' };
+  // Determine dominant strategy based on most frequent action
+  const strategies = [
+    { type: 'worker', label: 'Worker', count: workCount },
+    { type: 'explorer', label: 'Explorer', count: moveCount },
+    { type: 'sleeper', label: 'Sleeper', count: sleepCount },
+    { type: 'gatherer', label: 'Gatherer', count: gatherCount },
+    { type: 'consumer', label: 'Consumer', count: consumeCount },
+  ];
+
+  const dominant = strategies.reduce((a, b) => (b.count > a.count ? b : a));
+
+  // Need at least 2 actions of this type to show a strategy
+  if (dominant.count >= 2) {
+    return { type: dominant.type, label: dominant.label };
   }
 
   return { type: 'undecided', label: 'Undecided' };
@@ -99,16 +110,18 @@ function calculateStrategy(agentId: string, events: WorldEvent[]): { type: strin
 export function AgentSummaryTable() {
   const agents = useAgents();
   const events = useEvents();
+  const selectAgent = useWorldStore((s) => s.selectAgent);
   const [position, setPosition] = useState({ x: 20, y: 72 });
   const [isDragging, setIsDragging] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const dragRef = useRef({ startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
 
-  // Filter agents: show always visible LLMs + active agents
+  // Filter agents: show always visible LLMs + active agents (exclude dead)
   const visibleAgents = useMemo(() => {
     return agents.filter((agent) => {
-      if (agent.health <= 0) return false;
+      // Check state field for death, not health (dead agents may have health > 0)
+      if (agent.state === 'dead') return false;
 
       // Always show Claude, Codex, Gemini
       if (ALWAYS_VISIBLE_LLMS.includes(agent.llmType.toLowerCase())) {
@@ -241,7 +254,8 @@ export function AgentSummaryTable() {
                 return (
                   <tr
                     key={agent.id}
-                    className="group hover:bg-city-surface-hover/50 transition-colors"
+                    className="group hover:bg-city-surface-hover/50 transition-colors cursor-pointer"
+                    onClick={() => selectAgent(agent.id)}
                   >
                     <td className="py-1.5 rounded-l">
                       <div className="flex items-center gap-2">

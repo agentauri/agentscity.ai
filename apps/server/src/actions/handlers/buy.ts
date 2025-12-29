@@ -1,13 +1,17 @@
 /**
  * Buy Action Handler
  *
- * Purchase items from locations.
+ * Purchase items using CITY currency.
+ * Requires being at a shelter (trading post).
+ *
  * Cost: CITY currency
  */
 
 import { v4 as uuid } from 'uuid';
 import type { ActionIntent, ActionResult, BuyParams } from '../types';
 import type { Agent } from '../../db/schema';
+import { addToInventory } from '../../db/queries/inventory';
+import { getSheltersAtPosition } from '../../db/queries/world';
 
 // Item prices (MVP: simple fixed prices)
 const ITEM_PRICES: Record<string, number> = {
@@ -50,8 +54,17 @@ export async function handleBuy(
     };
   }
 
-  // TODO: Check if item is available at agent's current location
-  // For MVP, items are always available
+  // Check if agent is at a shelter (required for buying - shelters are trading posts)
+  const sheltersHere = await getSheltersAtPosition(agent.x, agent.y);
+  if (sheltersHere.length === 0) {
+    return {
+      success: false,
+      error: `Must be at a shelter to buy items. Current position: (${agent.x}, ${agent.y})`,
+    };
+  }
+
+  // Add items to inventory
+  await addToInventory(agent.id, itemType, quantity);
 
   // Success - return changes and events
   return {

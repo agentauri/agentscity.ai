@@ -1,31 +1,73 @@
-import { useEffect, useCallback, useRef } from 'react';
+/**
+ * AgentsCity - Scientific Mode
+ *
+ * Simplified interface for the scientific experiment:
+ * - No city editor (resources/shelters are spawned automatically)
+ * - Grid visualization shows agents, resources, shelters
+ * - Focus on observing emergent behavior
+ */
+
+import { useEffect, useCallback, useState } from 'react';
 import { useSSE } from './hooks/useSSE';
 import { useWorldStore } from './stores/world';
-import { useEditorStore, useAppMode, useIsEditorMode, useIsPaused } from './stores/editor';
-import { useCityPersistence } from './hooks/useCityPersistence';
+import { useEditorStore, useAppMode, useIsAnalyticsMode, useIsPaused } from './stores/editor';
+import { useWorldControl } from './hooks/useWorldControl';
 import { Layout } from './components/Layout';
-import { IsometricCanvas, type IsometricCanvasHandle } from './components/Canvas/IsometricCanvas';
+import { ScientificCanvas } from './components/Canvas/ScientificCanvas';
 import { EventFeed } from './components/EventFeed';
 import { AgentProfile } from './components/AgentProfile';
 import { WorldStats } from './components/WorldStats';
 import { AgentSummaryTable } from './components/AgentSummaryTable';
 import { DecisionLog } from './components/DecisionLog';
-import { TileToolbar, BuildingRequirements } from './components/Editor';
 import { ModeControls } from './components/Controls';
-import { assignBuildingsToLocations, validateGrid } from './utils/buildingAssignment';
+import { AnalyticsPage } from './pages/AnalyticsPage';
 
 export default function App() {
   const { status, connect, disconnect } = useSSE();
   const selectedAgentId = useWorldStore((s) => s.selectedAgentId);
-  const { setLocations, resetWorld } = useWorldStore();
-  const { setMode, grid, restoreLastSavedGrid, clearGrid } = useEditorStore();
+  const { resetWorld, setWorldState, setEvents, updateWorldState } = useWorldStore();
+  const { setMode, setPaused } = useEditorStore();
   const mode = useAppMode();
-  const isEditorMode = useIsEditorMode();
+  const isAnalyticsMode = useIsAnalyticsMode();
   const isPaused = useIsPaused();
-  const canvasRef = useRef<IsometricCanvasHandle>(null);
+  const [hasSynced, setHasSynced] = useState(false);
 
-  // Load city from URL hash on mount
-  useCityPersistence();
+  // World control hook for BE API
+  const { fetchState, start, pause, resume, reset, fetchRecentEvents } = useWorldControl();
+
+  // Sync with backend on mount (restore running simulation)
+  useEffect(() => {
+    if (hasSynced) return;
+
+    const syncWithBackend = async () => {
+      const state = await fetchState();
+      if (state && state.isRunning) {
+        console.log('[App] Restoring simulation state from backend:', state);
+
+        // Set world state with scientific model data
+        setWorldState({
+          tick: state.tick,
+          agents: state.agents || [],
+          resourceSpawns: state.resourceSpawns || [],
+          shelters: state.shelters || [],
+        });
+
+        // Fetch and set recent events BEFORE switching mode
+        const recentEvents = await fetchRecentEvents(100);
+        if (recentEvents.length > 0) {
+          console.log('[App] Loaded', recentEvents.length, 'recent events');
+          setEvents(recentEvents);
+        }
+
+        // Switch to simulation mode
+        setPaused(state.isPaused);
+        setMode('simulation');
+      }
+      setHasSynced(true);
+    };
+
+    syncWithBackend();
+  }, [hasSynced, fetchState, fetchRecentEvents, setMode, setPaused, setWorldState, setEvents]);
 
   // Connect/disconnect SSE based on mode
   useEffect(() => {
@@ -37,42 +79,51 @@ export default function App() {
     return () => disconnect();
   }, [mode, isPaused, connect, disconnect]);
 
-  // Handle start simulation
-  const handleStartSimulation = useCallback(() => {
-    // Validate grid has required buildings
-    const validation = validateGrid(grid);
-    if (!validation.valid) {
-      alert(validation.message);
+  // Handle start simulation - scientific mode (no city layout needed)
+  const handleStartSimulation = useCallback(async () => {
+    // Call backend to start simulation (spawns resources, shelters, agents automatically)
+    const result = await start();
+    if (!result.success) {
+      alert(result.error || 'Failed to start simulation. Is the server running?');
       return;
     }
 
-    // Assign buildings to locations
-    const locations = assignBuildingsToLocations(grid);
-    console.log('[App] Assigned locations:', locations);
-
-    // Set locations in world store
-    setLocations(locations);
+    // Update store with spawned entities
+    setWorldState({
+      tick: result.tick ?? 1,
+      agents: result.agents ?? [],
+      resourceSpawns: result.resourceSpawns ?? [],
+      shelters: result.shelters ?? [],
+    });
 
     // Switch to simulation mode
     setMode('simulation');
-  }, [grid, setLocations, setMode]);
 
-  // Handle reset (back to editor)
-  const handleReset = useCallback(() => {
-    // Disconnect SSE
+    // Connect SSE after setting state
+    connect();
+  }, [setMode, start, setWorldState, connect]);
+
+  // Handle reset - calls BE to reset DB
+  const handleReset = useCallback(async () => {
     disconnect();
-
-    // Reset world state
+    await reset();
     resetWorld();
+    setMode('editor'); // Back to "ready" state
+  }, [disconnect, reset, resetWorld, setMode]);
 
-    // Switch back to editor mode
-    setMode('editor');
+  // Handle pause - calls BE
+  const handlePause = useCallback(async () => {
+    await pause();
+    disconnect();
+  }, [pause, disconnect]);
 
-    // Optionally restore last saved grid (ask user?)
-    // For now, keep current grid
-  }, [disconnect, resetWorld, setMode]);
+  // Handle resume - calls BE
+  const handleResume = useCallback(async () => {
+    await resume();
+    connect();
+  }, [resume, connect]);
 
-  // Header content based on mode
+  // Header content
   const headerContent = (
     <div className="flex items-center justify-between w-full">
       <div className="flex items-center gap-4">
@@ -80,16 +131,17 @@ export default function App() {
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 bg-city-accent rounded-md flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <path d="M3 9h18" />
-              <path d="M9 21V9" />
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+              <path d="M2 12h20" />
             </svg>
           </div>
           <h1 className="text-base font-semibold text-city-text">Agents City</h1>
+          <span className="text-xs text-city-text-muted">Scientific Mode</span>
         </div>
 
         {/* World stats (only in simulation mode) */}
-        {!isEditorMode && (
+        {mode === 'simulation' && (
           <WorldStats connectionStatus={status} />
         )}
       </div>
@@ -98,55 +150,64 @@ export default function App() {
       <ModeControls
         onStartSimulation={handleStartSimulation}
         onReset={handleReset}
+        onPause={handlePause}
+        onResume={handleResume}
       />
     </div>
   );
 
+  // Analytics mode - render full-screen analytics page
+  if (isAnalyticsMode) {
+    return <AnalyticsPage />;
+  }
+
+  // Ready mode (before simulation starts)
+  const isReadyMode = mode === 'editor';
+
   return (
     <Layout
       header={headerContent}
-      toolbar={isEditorMode ? <TileToolbar /> : undefined}
       sidebar={
-        isEditorMode ? (
+        isReadyMode ? (
           <div className="p-4">
-            <h3 className="text-sm font-semibold text-city-text mb-2">Editor Mode</h3>
+            <h3 className="text-sm font-semibold text-city-text mb-2">Scientific Mode</h3>
             <p className="text-xs text-city-text-muted mb-4">
-              Select tiles from the toolbar and click on the canvas to place them.
+              This experiment observes emergent behavior in an AI agent population.
             </p>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-xs">
-                <div className="w-3 h-3 rounded-full bg-green-400" />
-                <span className="text-city-text-muted">Residential</span>
+            <div className="space-y-3 text-xs text-city-text-muted">
+              <div>
+                <h4 className="font-medium text-city-text mb-1">What's Imposed:</h4>
+                <ul className="list-disc list-inside space-y-0.5">
+                  <li>Grid world (100x100)</li>
+                  <li>Survival needs (hunger, energy, health)</li>
+                  <li>Resource distribution</li>
+                </ul>
               </div>
-              <div className="flex items-center gap-2 text-xs">
-                <div className="w-3 h-3 rounded-full bg-blue-400" />
-                <span className="text-city-text-muted">Commercial</span>
+              <div>
+                <h4 className="font-medium text-city-text mb-1">What Emerges:</h4>
+                <ul className="list-disc list-inside space-y-0.5">
+                  <li>Movement patterns</li>
+                  <li>Resource gathering strategies</li>
+                  <li>Social behaviors</li>
+                </ul>
               </div>
-              <div className="flex items-center gap-2 text-xs">
-                <div className="w-3 h-3 rounded-full bg-yellow-400" />
-                <span className="text-city-text-muted">Industrial</span>
+              <div className="pt-2 border-t border-city-border/30">
+                <p className="italic">Click "Start Simulation" to begin the experiment.</p>
               </div>
-              <div className="flex items-center gap-2 text-xs">
-                <div className="w-3 h-3 rounded-full bg-purple-400" />
-                <span className="text-city-text-muted">Civic</span>
-              </div>
-            </div>
-            <div className="mt-4">
-              <BuildingRequirements />
             </div>
           </div>
         ) : selectedAgentId ? (
           <AgentProfile agentId={selectedAgentId} />
         ) : (
           <div className="p-4 text-gray-400 text-sm">
-            Click an agent to view details
+            Click an agent on the grid to view details
           </div>
         )
       }
       feed={<EventFeed />}
     >
-      <IsometricCanvas ref={canvasRef} />
-      {!isEditorMode && (
+      <ScientificCanvas />
+      {!isReadyMode && (
         <>
           <AgentSummaryTable />
           <DecisionLog />

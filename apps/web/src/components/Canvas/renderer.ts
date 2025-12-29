@@ -115,6 +115,7 @@ export interface RenderState {
   agents: Agent[];
   locations: Location[];
   selectedAgentId: string | null;
+  selectedLocationId: string | null;
   bubbles: AgentBubble[];
 }
 
@@ -159,6 +160,7 @@ export class IsometricRenderer {
     agents: [],
     locations: [],
     selectedAgentId: null,
+    selectedLocationId: null,
     bubbles: []
   };
 
@@ -167,6 +169,7 @@ export class IsometricRenderer {
   private cameraY = 0;
   private zoom = 0.6;
   private onAgentClick: ((agentId: string) => void) | null = null;
+  private onLocationClick: ((locationId: string) => void) | null = null;
 
   // Sprite sheet
   private spriteSheet: HTMLImageElement | null = null;
@@ -566,8 +569,9 @@ export class IsometricRenderer {
     if (this.state.agents.length === 0) return;
 
     // Sort agents by visual depth (using animation manager positions)
+    // Filter by state instead of health (dead agents may have health > 0)
     const sortedAgents = [...this.state.agents]
-      .filter(a => a.health > 0)
+      .filter(a => a.state !== 'dead')
       .sort((a, b) => {
         const stateA = this.animationManager.getState(a.id);
         const stateB = this.animationManager.getState(b.id);
@@ -606,38 +610,6 @@ export class IsometricRenderer {
     }));
   }
 
-  /** Check if agent is behind a tall building */
-  private isAgentBehindBuilding(gridX: number, gridY: number): boolean {
-    if (!this.editorGrid) return false;
-
-    const cellX = Math.floor(gridX);
-    const cellY = Math.floor(gridY);
-
-    // In isometric view, buildings BEHIND the agent (lower x+y, drawn earlier)
-    // extend upward on screen and can visually cover the agent.
-    // Check cells behind/beside agent (negative offsets)
-    const offsets = [
-      { dx: -1, dy: 0 }, { dx: 0, dy: -1 }, { dx: -1, dy: -1 },
-      { dx: -2, dy: 0 }, { dx: 0, dy: -2 }, { dx: -1, dy: -2 },
-      { dx: -2, dy: -1 }, { dx: -2, dy: -2 },
-      { dx: -1, dy: 1 }, { dx: 1, dy: -1 }, // Diagonal cells
-    ];
-
-    for (const { dx, dy } of offsets) {
-      const checkX = cellX + dx;
-      const checkY = cellY + dy;
-
-      if (checkX >= 0 && checkX < GRID_SIZE && checkY >= 0 && checkY < GRID_SIZE) {
-        const cell = this.editorGrid[checkY]?.[checkX];
-        // Buildings are in rows 3-5 of the tileset (tall structures)
-        if (cell && cell.row >= 3 && cell.row <= 5) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
   /** Draw a single agent as an isometric human figure */
   private drawAgent(
     ctx: CanvasRenderingContext2D,
@@ -656,12 +628,6 @@ export class IsometricRenderer {
     const isSelected = agent.id === this.state.selectedAgentId;
     const baseColor = getLLMColor(agent.llmType);
     const scale = this.zoom;
-
-    // Check if agent is behind a building (render as silhouette)
-    const isBehindBuilding = this.isAgentBehindBuilding(animState.visualX, animState.visualY);
-    if (isBehindBuilding && !isSelected) {
-      ctx.globalAlpha = 0.4;
-    }
 
     // Dimensions for isometric human figure
     const bodyWidth = 16 * scale;
@@ -837,11 +803,6 @@ export class IsometricRenderer {
     // Text
     ctx.fillStyle = '#ffffff';
     ctx.fillText(label, sx, feetY + 6 * scale);
-
-    // Reset alpha if it was modified for behind-building effect
-    if (isBehindBuilding && !isSelected) {
-      ctx.globalAlpha = 1;
-    }
   }
 
   /** Draw effects layer (health bars, speech bubbles, UI) */
@@ -855,7 +816,8 @@ export class IsometricRenderer {
 
     // Health bars for low health agents (only show when health is defined and low)
     for (const agent of this.state.agents) {
-      if (!agent.health || agent.health <= 0 || agent.health > 30) continue;
+      // Skip dead agents and those with healthy vitals
+      if (agent.state === 'dead' || !agent.health || agent.health > 30) continue;
 
       const animState = this.animationManager.getState(agent.id);
       if (!animState) continue;
@@ -881,10 +843,10 @@ export class IsometricRenderer {
       ctx.fillRect(sx - barWidth / 2, barY, barWidth * healthPercent, barHeight);
     }
 
-    // Speech bubbles
+    // Speech bubbles with LLM reasoning
     for (const bubble of this.state.bubbles) {
       const agent = this.state.agents.find((a) => a.id === bubble.agentId);
-      if (!agent || agent.health <= 0) continue;
+      if (!agent || agent.state === 'dead') continue;
 
       const animState = this.animationManager.getState(agent.id);
       if (!animState) continue;
@@ -900,14 +862,45 @@ export class IsometricRenderer {
       const floatOffset = Math.min(age / 200, 10) * this.zoom;
 
       const [sx, sy] = this.gridToScreen(animState.visualX, animState.visualY);
-      const bubbleY = sy - 60 * this.zoom - floatOffset;
       const text = bubble.emoji ? `${bubble.emoji} ${bubble.text}` : bubble.text;
 
-      ctx.font = `bold ${12 * this.zoom}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-      const textWidth = ctx.measureText(text).width;
+      // Use smaller font for longer text
+      const isLongText = text.length > 30;
+      const fontSize = isLongText ? 10 * this.zoom : 12 * this.zoom;
+      ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+
+      // Word wrap for long text
+      const maxWidth = 180 * this.zoom;
+      const words = text.split(' ');
+      const lines: string[] = [];
+      let currentLine = '';
+
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        const testWidth = ctx.measureText(testLine).width;
+        if (testWidth > maxWidth && currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (currentLine) lines.push(currentLine);
+
+      // Limit to 3 lines max
+      if (lines.length > 3) {
+        lines.length = 3;
+        lines[2] = lines[2].substring(0, lines[2].length - 3) + '...';
+      }
+
+      const lineHeight = (isLongText ? 12 : 14) * this.zoom;
       const padding = 10 * this.zoom;
-      const bubbleWidth = Math.min(textWidth + padding * 2, 200 * this.zoom);
-      const bubbleHeight = 26 * this.zoom;
+      const bubbleWidth = Math.min(
+        Math.max(...lines.map((l) => ctx.measureText(l).width)) + padding * 2,
+        200 * this.zoom
+      );
+      const bubbleHeight = (lines.length * lineHeight + padding) * 1.2;
+      const bubbleY = sy - 60 * this.zoom - floatOffset - (lines.length - 1) * lineHeight / 2;
 
       ctx.globalAlpha = opacity;
 
@@ -937,12 +930,14 @@ export class IsometricRenderer {
       ctx.closePath();
       ctx.fill();
 
-      // Text
+      // Text (multi-line)
       ctx.fillStyle = '#f4f1de';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const displayText = text.length > 25 ? text.substring(0, 22) + '...' : text;
-      ctx.fillText(displayText, sx, bubbleY);
+      const startY = bubbleY - ((lines.length - 1) * lineHeight) / 2;
+      for (let i = 0; i < lines.length; i++) {
+        ctx.fillText(lines[i], sx, startY + i * lineHeight);
+      }
 
       ctx.globalAlpha = 1;
     }
@@ -959,8 +954,8 @@ export class IsometricRenderer {
     ctx.textBaseline = 'middle';
     ctx.fillText(`Tick: ${this.state.tick}`, 16, 22);
 
-    // Agent count
-    const aliveCount = this.state.agents.filter(a => a.health > 0).length;
+    // Agent count (check state, not health)
+    const aliveCount = this.state.agents.filter(a => a.state !== 'dead').length;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.beginPath();
     ctx.roundRect(8, 42, 100, 28, 6);
@@ -993,31 +988,50 @@ export class IsometricRenderer {
   // =============================================================================
 
   private handleClick = (e: MouseEvent): void => {
-    if (!this.onAgentClick) return;
-
     const rect = this.agentsCtx.canvas.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
 
-    // Check each agent for click proximity using animation positions
-    for (const agent of this.state.agents) {
-      if (agent.health <= 0) continue;
+    // First check agents (they're on top layer)
+    if (this.onAgentClick) {
+      for (const agent of this.state.agents) {
+        if (agent.state === 'dead') continue;
 
-      const animState = this.animationManager.getState(agent.id);
-      if (!animState) continue;
+        const animState = this.animationManager.getState(agent.id);
+        if (!animState) continue;
 
-      const [sx, sy] = this.gridToScreen(animState.visualX, animState.visualY);
-      const distance = Math.sqrt((clickX - sx) ** 2 + (clickY - sy) ** 2);
+        const [sx, sy] = this.gridToScreen(animState.visualX, animState.visualY);
+        const distance = Math.sqrt((clickX - sx) ** 2 + (clickY - sy) ** 2);
 
-      if (distance < 30 * this.zoom) {
-        this.onAgentClick(agent.id);
-        return;
+        if (distance < 30 * this.zoom) {
+          this.onAgentClick(agent.id);
+          return;
+        }
+      }
+    }
+
+    // If no agent clicked, check for location clicks
+    if (this.onLocationClick) {
+      const gridPos = this.screenToGrid(clickX, clickY);
+      if (gridPos) {
+        const { gridX, gridY } = gridPos;
+        // Find location at this grid position
+        const location = this.state.locations.find(
+          (l) => l.x === Math.floor(gridX) && l.y === Math.floor(gridY)
+        );
+        if (location) {
+          this.onLocationClick(location.id);
+        }
       }
     }
   };
 
   setOnAgentClick(handler: (agentId: string) => void): void {
     this.onAgentClick = handler;
+  }
+
+  setOnLocationClick(handler: (locationId: string) => void): void {
+    this.onLocationClick = handler;
   }
 
   // =============================================================================

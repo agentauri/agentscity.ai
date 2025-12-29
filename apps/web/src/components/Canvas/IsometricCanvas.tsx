@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
-import { useWorldStore } from '../../stores/world';
+import { useWorldStore, useAgents, useLocations, useBubbles } from '../../stores/world';
 import { useEditorStore, useIsEditorMode, useEditorGrid, useSelectedTile } from '../../stores/editor';
 import { IsometricRenderer } from './renderer';
 import { useEditorInteraction } from '../../hooks/useEditorInteraction';
@@ -26,8 +26,16 @@ export const IsometricCanvas = forwardRef<IsometricCanvasHandle>(function Isomet
   const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
 
-  // World store
-  const { tick, agents, locations, selectedAgentId, selectAgent, bubbles } = useWorldStore();
+  // World store - use shallow selectors for proper React 19 re-renders
+  const tick = useWorldStore((s) => s.tick);
+  const selectedAgentId = useWorldStore((s) => s.selectedAgentId);
+  const selectedLocationId = useWorldStore((s) => s.selectedLocationId);
+  const selectAgent = useWorldStore((s) => s.selectAgent);
+  const selectLocation = useWorldStore((s) => s.selectLocation);
+  // Use proper shallow selectors for arrays
+  const agents = useAgents();
+  const locations = useLocations();
+  const bubbles = useBubbles();
 
   // Editor store
   const isEditorMode = useIsEditorMode();
@@ -53,6 +61,13 @@ export const IsometricCanvas = forwardRef<IsometricCanvasHandle>(function Isomet
       // Only handle agent clicks in simulation mode
       if (!isEditorMode) {
         selectAgent(id === selectedAgentId ? null : id);
+      }
+    });
+
+    renderer.setOnLocationClick((id) => {
+      // Only handle location clicks in simulation mode
+      if (!isEditorMode) {
+        selectLocation(id);
       }
     });
 
@@ -90,10 +105,11 @@ export const IsometricCanvas = forwardRef<IsometricCanvasHandle>(function Isomet
         agents,
         locations,
         selectedAgentId,
+        selectedLocationId,
         bubbles,
       });
     }
-  }, [tick, agents, locations, selectedAgentId, bubbles, isEditorMode]);
+  }, [tick, agents, locations, selectedAgentId, selectedLocationId, bubbles, isEditorMode]);
 
   // Editor interaction hook
   useEditorInteraction({
@@ -199,15 +215,8 @@ export const IsometricCanvas = forwardRef<IsometricCanvasHandle>(function Isomet
     // Left-click: in editor mode with a selected tile, don't start drag (let editor interaction handle it)
     if (isEditorMode && selectedTile && e.button === 0) return;
 
-    // Left-click drag in simulation mode (no tile selection)
-    if (e.button === 0) {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX, y: e.clientY });
-      if (rendererRef.current) {
-        const camera = rendererRef.current.getCamera();
-        setCameraStart(camera);
-      }
-    }
+    // In simulation mode, left-click without space is for selecting agents/locations (not pan)
+    // Pan is only enabled with space key held down
   }, [isEditorMode, selectedTile, isSpacePressed]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -245,8 +254,7 @@ export const IsometricCanvas = forwardRef<IsometricCanvasHandle>(function Isomet
     if (isDragging) return 'grabbing';
     if (isSpacePressed) return 'grab';
     if (isEditorMode && selectedTile) return 'crosshair';
-    if (isEditorMode) return 'default';
-    return 'grab';
+    return 'default'; // Default cursor for clicking agents/locations
   };
 
   return (
@@ -319,7 +327,7 @@ export const IsometricCanvas = forwardRef<IsometricCanvasHandle>(function Isomet
       >
         {isEditorMode
           ? 'Click to place | Right-click to erase | Space+drag to pan | Scroll to zoom'
-          : 'Drag to pan | Scroll to zoom | Double-click to reset'}
+          : 'Click to select | Space+drag to pan | Scroll to zoom | Double-click to reset'}
       </div>
     </div>
   );

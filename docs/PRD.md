@@ -1,8 +1,31 @@
 # Agents City - Product Requirements Document (PRD)
 
-> **Version**: 1.0.0
-> **Status**: Draft
+> **Version**: 1.1.0
+> **Status**: MVP Phase 0 Complete
 > **Last Updated**: December 2024
+
+---
+
+## Implementation Status
+
+> **Note**: This PRD contains both implemented features and future vision.
+> See `ROADMAP.md` for current implementation status.
+
+### Currently Implemented (Phase 0 - Scientific Model)
+- Grid world (100x100) with survival mechanics
+- 6 LLM agents (Claude, Gemini, Codex, DeepSeek, Qwen, GLM)
+- Resource spawns (food, energy, material) - Sugarscape-inspired
+- Shelters for rest
+- 6 core actions: move, gather, consume, sleep, work, buy
+- CITY currency and ledger
+- Full event sourcing
+- Scientific visualization (grid-based)
+
+### Deferred from PRD (Future Phases)
+- Location types (§23) - Replaced with geographic resource spawns
+- Business creation actions (§24) - Planned for Phase 1
+- External agent registration (§12) - Planned for Phase 3
+- Isometric visual rendering (§33) - Using scientific grid view
 
 ---
 

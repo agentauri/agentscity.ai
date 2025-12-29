@@ -26,6 +26,23 @@ export interface Location {
   y: number;
 }
 
+// Scientific model types
+export interface ResourceSpawn {
+  id: string;
+  x: number;
+  y: number;
+  resourceType: 'food' | 'energy' | 'material';
+  currentAmount: number;
+  maxAmount: number;
+}
+
+export interface Shelter {
+  id: string;
+  x: number;
+  y: number;
+  canSleep: boolean;
+}
+
 export interface WorldEvent {
   id: string;
   type: string;
@@ -50,23 +67,30 @@ interface WorldState {
   // World data
   tick: number;
   agents: Agent[];
-  locations: Location[];
+  locations: Location[]; // Legacy - for backwards compatibility
+  resourceSpawns: ResourceSpawn[]; // Scientific model
+  shelters: Shelter[]; // Scientific model
   events: WorldEvent[];
   bubbles: AgentBubble[];
 
   // UI state
   selectedAgentId: string | null;
+  selectedLocationId: string | null;
   cameraX: number;
   cameraY: number;
   zoom: number;
 
   // Actions
-  setWorldState: (state: { tick: number; agents: Agent[]; locations: Location[] }) => void;
+  setWorldState: (state: { tick: number; agents: Agent[]; locations?: Location[]; resourceSpawns?: ResourceSpawn[]; shelters?: Shelter[] }) => void;
+  updateWorldState: (state: { tick: number; agents: Agent[]; locations?: Location[]; resourceSpawns?: ResourceSpawn[]; shelters?: Shelter[] }) => void;
   setTick: (tick: number) => void;
   updateAgent: (id: string, updates: Partial<Agent>) => void;
+  updateResourceSpawn: (id: string, updates: Partial<ResourceSpawn>) => void;
   addEvent: (event: WorldEvent) => void;
+  setEvents: (events: WorldEvent[]) => void;
   addBubble: (bubble: AgentBubble) => void;
   selectAgent: (id: string | null) => void;
+  selectLocation: (id: string | null) => void;
   setCamera: (x: number, y: number) => void;
   setZoom: (zoom: number) => void;
   // Editor integration
@@ -84,9 +108,12 @@ export const useWorldStore = create<WorldState>((set) => ({
   tick: 0,
   agents: [],
   locations: [],
+  resourceSpawns: [],
+  shelters: [],
   events: [],
   bubbles: [],
   selectedAgentId: null,
+  selectedLocationId: null,
   cameraX: 0,
   cameraY: 0,
   zoom: 1,
@@ -96,7 +123,22 @@ export const useWorldStore = create<WorldState>((set) => ({
     set({
       tick: state.tick,
       agents: state.agents,
-      locations: state.locations,
+      locations: state.locations ?? [],
+      resourceSpawns: state.resourceSpawns ?? [],
+      shelters: state.shelters ?? [],
+      events: [], // Clear events on new world state
+      bubbles: [], // Clear bubbles on new world state
+    }),
+
+  // Update world state WITHOUT clearing events (for SSE reconnect)
+  updateWorldState: (state) =>
+    set({
+      tick: state.tick,
+      agents: state.agents,
+      locations: state.locations ?? [],
+      resourceSpawns: state.resourceSpawns ?? [],
+      shelters: state.shelters ?? [],
+      // Preserve events and bubbles!
     }),
 
   setTick: (tick) => set({ tick }),
@@ -106,10 +148,17 @@ export const useWorldStore = create<WorldState>((set) => ({
       agents: state.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
     })),
 
+  updateResourceSpawn: (id, updates) =>
+    set((state) => ({
+      resourceSpawns: state.resourceSpawns.map((r) => (r.id === id ? { ...r, ...updates } : r)),
+    })),
+
   addEvent: (event) =>
     set((state) => ({
       events: [event, ...state.events].slice(0, 100), // Keep last 100 events
     })),
+
+  setEvents: (events) => set({ events }),
 
   addBubble: (bubble) =>
     set((state) => {
@@ -121,7 +170,13 @@ export const useWorldStore = create<WorldState>((set) => ({
       return { bubbles: [...filteredBubbles, bubble] };
     }),
 
-  selectAgent: (id) => set({ selectedAgentId: id }),
+  selectAgent: (id) => set({ selectedAgentId: id, selectedLocationId: null }),
+
+  selectLocation: (id) =>
+    set((state) => ({
+      selectedLocationId: state.selectedLocationId === id ? null : id,
+      selectedAgentId: null, // Deselect agent when selecting location
+    })),
 
   setCamera: (x, y) => set({ cameraX: x, cameraY: y }),
 
@@ -139,9 +194,12 @@ export const useWorldStore = create<WorldState>((set) => ({
       tick: 0,
       agents: [],
       locations: [],
+      resourceSpawns: [],
+      shelters: [],
       events: [],
       bubbles: [],
       selectedAgentId: null,
+      selectedLocationId: null,
     }),
 }));
 
@@ -159,6 +217,13 @@ export const useSelectedAgent = () =>
       : null
   );
 
+export const useSelectedLocation = () =>
+  useWorldStore((state) =>
+    state.selectedLocationId
+      ? state.locations.find((l) => l.id === state.selectedLocationId)
+      : null
+  );
+
 export const useAgents = () =>
   useWorldStore(useShallow((state) => state.agents));
 
@@ -170,7 +235,8 @@ export const useEvents = () =>
 
 export const useAliveAgents = () => {
   const agents = useWorldStore(useShallow((state) => state.agents));
-  return agents.filter((a) => a.health > 0);
+  // Check state field for death, not health (dead agents may have health > 0)
+  return agents.filter((a) => a.state !== 'dead');
 };
 
 export const useRecentEvents = (limit = 20) => {
@@ -180,3 +246,10 @@ export const useRecentEvents = (limit = 20) => {
 
 export const useBubbles = () =>
   useWorldStore(useShallow((state) => state.bubbles));
+
+// Scientific model selectors
+export const useResourceSpawns = () =>
+  useWorldStore(useShallow((state) => state.resourceSpawns));
+
+export const useShelters = () =>
+  useWorldStore(useShallow((state) => state.shelters));

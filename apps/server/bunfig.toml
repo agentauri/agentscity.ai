@@ -1,0 +1,27 @@
+# Bun test configuration for AgentsCity server
+
+[test]
+# Run tests in parallel for faster execution
+parallel = true
+
+# Test file patterns
+pattern = "**/*.test.ts"
+
+# Root directory for tests
+root = "./src"
+
+# Timeout for each test (in milliseconds)
+timeout = 10000
+
+# Coverage configuration
+coverage = true
+coverageDir = "./coverage"
+coverageReporters = ["text", "lcov"]
+
+# Ignore patterns
+coverageIgnorePatterns = [
+  "node_modules",
+  "dist",
+  "__tests__/fixtures",
+  "**/*.d.ts"
+]

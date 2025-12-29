@@ -5,7 +5,13 @@
 import type { AgentDecision } from './types';
 import type { ActionType } from '../actions/types';
 
-const VALID_ACTIONS: ActionType[] = ['move', 'buy', 'consume', 'sleep', 'work'];
+const VALID_ACTIONS: ActionType[] = [
+  'move', 'buy', 'consume', 'sleep', 'work', 'gather', 'trade',
+  // Phase 2: Conflict Actions
+  'harm', 'steal', 'deceive',
+  // Phase 2: Social Discovery
+  'share_info',
+];
 
 /**
  * Parse LLM response into AgentDecision
@@ -90,12 +96,92 @@ function validateActionParams(
       break;
 
     case 'work':
-      if (typeof params.locationId !== 'string') {
-        return { valid: false, error: 'work requires locationId string' };
-      }
+      // locationId is optional in scientific model
       if (params.duration !== undefined) {
         if (typeof params.duration !== 'number' || params.duration < 1 || params.duration > 5) {
           return { valid: false, error: 'work duration must be 1-5' };
+        }
+      }
+      break;
+
+    case 'gather':
+      // resourceType is optional (gather any available)
+      if (params.resourceType !== undefined && typeof params.resourceType !== 'string') {
+        return { valid: false, error: 'gather resourceType must be a string' };
+      }
+      if (params.quantity !== undefined) {
+        if (typeof params.quantity !== 'number' || params.quantity < 1 || params.quantity > 5) {
+          return { valid: false, error: 'gather quantity must be 1-5' };
+        }
+      }
+      break;
+
+    case 'trade':
+      if (typeof params.targetAgentId !== 'string') {
+        return { valid: false, error: 'trade requires targetAgentId string' };
+      }
+      if (typeof params.offeringItemType !== 'string') {
+        return { valid: false, error: 'trade requires offeringItemType string' };
+      }
+      if (typeof params.offeringQuantity !== 'number' || params.offeringQuantity < 1) {
+        return { valid: false, error: 'trade offeringQuantity must be at least 1' };
+      }
+      if (typeof params.requestingItemType !== 'string') {
+        return { valid: false, error: 'trade requires requestingItemType string' };
+      }
+      if (typeof params.requestingQuantity !== 'number' || params.requestingQuantity < 1) {
+        return { valid: false, error: 'trade requestingQuantity must be at least 1' };
+      }
+      break;
+
+    // Phase 2: Conflict Actions
+    case 'harm':
+      if (typeof params.targetAgentId !== 'string') {
+        return { valid: false, error: 'harm requires targetAgentId string' };
+      }
+      if (!['light', 'moderate', 'severe'].includes(params.intensity as string)) {
+        return { valid: false, error: 'harm intensity must be light, moderate, or severe' };
+      }
+      break;
+
+    case 'steal':
+      if (typeof params.targetAgentId !== 'string') {
+        return { valid: false, error: 'steal requires targetAgentId string' };
+      }
+      if (typeof params.targetItemType !== 'string') {
+        return { valid: false, error: 'steal requires targetItemType string' };
+      }
+      if (typeof params.quantity !== 'number' || params.quantity < 1) {
+        return { valid: false, error: 'steal quantity must be at least 1' };
+      }
+      break;
+
+    case 'deceive':
+      if (typeof params.targetAgentId !== 'string') {
+        return { valid: false, error: 'deceive requires targetAgentId string' };
+      }
+      if (typeof params.claim !== 'string' || params.claim.length < 5 || params.claim.length > 500) {
+        return { valid: false, error: 'deceive claim must be 5-500 characters' };
+      }
+      if (!['resource_location', 'agent_reputation', 'danger_warning', 'trade_offer', 'other'].includes(params.claimType as string)) {
+        return { valid: false, error: 'deceive claimType must be resource_location, agent_reputation, danger_warning, trade_offer, or other' };
+      }
+      break;
+
+    // Phase 2: Social Discovery
+    case 'share_info':
+      if (typeof params.targetAgentId !== 'string') {
+        return { valid: false, error: 'share_info requires targetAgentId string' };
+      }
+      if (typeof params.subjectAgentId !== 'string') {
+        return { valid: false, error: 'share_info requires subjectAgentId string' };
+      }
+      if (!['location', 'reputation', 'warning', 'recommendation'].includes(params.infoType as string)) {
+        return { valid: false, error: 'share_info infoType must be location, reputation, warning, or recommendation' };
+      }
+      if (params.sentiment !== undefined) {
+        if (typeof params.sentiment !== 'number' || params.sentiment < -100 || params.sentiment > 100) {
+          return { valid: false, error: 'share_info sentiment must be between -100 and 100' };
         }
       }
       break;
@@ -107,13 +193,19 @@ function validateActionParams(
 /**
  * Generate fallback decision when LLM fails
  * Prioritizes survival: eat if hungry, rest if tired, work if poor
+ *
+ * Scientific model: no location restrictions
+ * - Buy/work function anywhere
+ * - Movement is random exploration
  */
 export function getFallbackDecision(
   hunger: number,
   energy: number,
-  balance: number
+  balance: number,
+  agentX?: number,
+  agentY?: number
 ): AgentDecision {
-  // Priority 1: Eat if critically hungry
+  // Priority 1: If critically hungry and have money, buy food
   if (hunger < 30 && balance >= 10) {
     return {
       action: 'buy',
@@ -122,12 +214,12 @@ export function getFallbackDecision(
     };
   }
 
-  // Priority 2: Consume food if hungry and presumably have some
+  // Priority 2: Consume food if hungry (assume might have some)
   if (hunger < 50) {
     return {
       action: 'consume',
       params: { itemType: 'food' },
-      reasoning: 'Fallback: hungry, consuming food',
+      reasoning: 'Fallback: hungry, attempting to consume food',
     };
   }
 
@@ -140,12 +232,31 @@ export function getFallbackDecision(
     };
   }
 
-  // Priority 4: Work if poor
+  // Priority 4: Work if poor (no location required)
   if (balance < 50 && energy >= 20) {
     return {
       action: 'work',
-      params: { locationId: 'default', duration: 2 },
+      params: { duration: 2 },
       reasoning: 'Fallback: low funds, working',
+    };
+  }
+
+  // Priority 5: Random exploration if healthy
+  if (energy >= 10) {
+    const currentX = agentX ?? 50;
+    const currentY = agentY ?? 50;
+    // Random direction
+    const directions = [
+      { dx: 1, dy: 0 },
+      { dx: -1, dy: 0 },
+      { dx: 0, dy: 1 },
+      { dx: 0, dy: -1 },
+    ];
+    const dir = directions[Math.floor(Math.random() * directions.length)];
+    return {
+      action: 'move',
+      params: { toX: currentX + dir.dx, toY: currentY + dir.dy },
+      reasoning: 'Fallback: exploring',
     };
   }
 

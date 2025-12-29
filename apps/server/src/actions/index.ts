@@ -9,6 +9,17 @@ import { handleBuy } from './handlers/buy';
 import { handleConsume } from './handlers/consume';
 import { handleSleep } from './handlers/sleep';
 import { handleWork } from './handlers/work';
+import { handleGather } from './handlers/gather';
+import { handleTrade } from './handlers/trade';
+// Phase 1: Emergence Observation
+import { handleClaim } from './handlers/claim';
+import { handleNameLocation } from './handlers/name-location';
+// Phase 2: Conflict Actions
+import { handleHarm } from './handlers/harm';
+import { handleSteal } from './handlers/steal';
+import { handleDeceive } from './handlers/deceive';
+// Phase 2: Social Discovery
+import { handleShareInfo } from './handlers/share-info';
 
 // Action handler registry
 const handlers: Map<ActionType, ActionHandler> = new Map();
@@ -19,6 +30,17 @@ handlers.set('buy', handleBuy as ActionHandler);
 handlers.set('consume', handleConsume as ActionHandler);
 handlers.set('sleep', handleSleep as ActionHandler);
 handlers.set('work', handleWork as ActionHandler);
+handlers.set('gather', handleGather as ActionHandler);
+handlers.set('trade', handleTrade as ActionHandler);
+// Phase 1: Emergence Observation
+handlers.set('claim', handleClaim as ActionHandler);
+handlers.set('name_location', handleNameLocation as ActionHandler);
+// Phase 2: Conflict Actions
+handlers.set('harm', handleHarm as ActionHandler);
+handlers.set('steal', handleSteal as ActionHandler);
+handlers.set('deceive', handleDeceive as ActionHandler);
+// Phase 2: Social Discovery
+handlers.set('share_info', handleShareInfo as ActionHandler);
 
 /**
  * Register a custom action handler

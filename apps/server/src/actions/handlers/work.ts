@@ -1,14 +1,17 @@
 /**
  * Work Action Handler
  *
- * Work at a location to earn CITY currency.
+ * Work at shelters to earn CITY currency.
+ * Requires being at a shelter location.
+ *
  * Cost: Energy
- * Reward: CITY salary
+ * Reward: CITY salary (flat rate)
  */
 
 import { v4 as uuid } from 'uuid';
 import type { ActionIntent, ActionResult, WorkParams } from '../types';
 import type { Agent } from '../../db/schema';
+import { getSheltersAtPosition } from '../../db/queries/world';
 
 // Work configuration
 const CONFIG = {
@@ -18,19 +21,11 @@ const CONFIG = {
   maxDuration: 5,
 } as const;
 
-// Location multipliers (type -> pay multiplier)
-const LOCATION_MULTIPLIERS: Record<string, number> = {
-  commercial: 1.5,
-  industrial: 1.2,
-  civic: 1.0,
-  residential: 0.8,
-};
-
 export async function handleWork(
   intent: ActionIntent<WorkParams>,
   agent: Agent
 ): Promise<ActionResult> {
-  const { locationId, duration = 1 } = intent.params;
+  const { duration = 1 } = intent.params;
 
   // Validate duration
   if (duration < CONFIG.minDuration || duration > CONFIG.maxDuration) {
@@ -40,13 +35,8 @@ export async function handleWork(
     };
   }
 
-  // Check if agent is already working or sleeping
-  if (agent.state === 'working') {
-    return {
-      success: false,
-      error: 'Agent is already working',
-    };
-  }
+  // Check if agent is sleeping (can't work while asleep)
+  // Note: We no longer use 'working' state since work is an instant action
   if (agent.state === 'sleeping') {
     return {
       success: false,
@@ -65,22 +55,26 @@ export async function handleWork(
     };
   }
 
-  // TODO: Get location from database and apply multiplier
-  // For MVP, use default multiplier
-  const multiplier = 1.0;
+  // Check if agent is at a shelter (required for work)
+  const sheltersHere = await getSheltersAtPosition(agent.x, agent.y);
+  if (sheltersHere.length === 0) {
+    return {
+      success: false,
+      error: `Must be at a shelter to work. Current position: (${agent.x}, ${agent.y})`,
+    };
+  }
 
-  // Calculate salary
-  const basePay = CONFIG.basePayPerTick * duration;
-  const salary = basePay * multiplier;
+  const salary = CONFIG.basePayPerTick * duration;
 
   // Success - return changes and events
+  // Note: Work is an instant action - no state change needed
+  // Previously set state to 'working' which caused agents to get stuck
   const newBalance = agent.balance + salary;
   const newEnergy = agent.energy - energyCost;
 
   return {
     success: true,
     changes: {
-      state: 'working',
       balance: newBalance,
       energy: newEnergy,
     },
@@ -92,10 +86,8 @@ export async function handleWork(
         timestamp: Date.now(),
         agentId: agent.id,
         payload: {
-          locationId,
+          position: { x: agent.x, y: agent.y },
           duration,
-          basePay,
-          multiplier,
           salary,
           energyCost,
           newBalance,

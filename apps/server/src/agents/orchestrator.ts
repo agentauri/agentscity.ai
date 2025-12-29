@@ -1,10 +1,12 @@
 /**
  * Agent Orchestrator - Manages agent decision loop
+ *
+ * Scientific Model: uses resource spawns and shelters instead of typed locations
  */
 
 import { getAliveAgents, updateAgent } from '../db/queries/agents';
-import { getAllLocations } from '../db/queries/world';
-import { getEventsByAgent } from '../db/queries/events';
+import { getAllResourceSpawns, getAllShelters } from '../db/queries/world';
+import { getEventsByAgent, appendEvent } from '../db/queries/events';
 import type { Agent } from '../db/schema';
 import type { LLMType, AgentDecision } from '../llm/types';
 import { queueDecisions, waitForDecisions, type DecisionJobResult } from '../queue';
@@ -27,9 +29,10 @@ export interface AgentTickResult {
  */
 export async function processAgentsTick(tick: number): Promise<AgentTickResult[]> {
   // Get alive agents and world state
-  const [agents, locations] = await Promise.all([
+  const [agents, resourceSpawns, shelters] = await Promise.all([
     getAliveAgents(),
-    getAllLocations(),
+    getAllResourceSpawns(),
+    getAllShelters(),
   ]);
 
   if (agents.length === 0) {
@@ -52,7 +55,7 @@ export async function processAgentsTick(tick: number): Promise<AgentTickResult[]
         })
       );
 
-      const observation = buildObservation(agent, tick, agents, locations, recentEvents);
+      const observation = await buildObservation(agent, tick, agents, resourceSpawns, shelters, recentEvents);
 
       return {
         agentId: agent.id,
@@ -66,23 +69,8 @@ export async function processAgentsTick(tick: number): Promise<AgentTickResult[]
   // Queue all decisions
   const queuedJobs = await queueDecisions(jobs);
 
-  // Wait for all decisions (with 30s timeout)
-  let decisionResults: DecisionJobResult[];
-  try {
-    decisionResults = await waitForDecisions(queuedJobs, 30000);
-  } catch (error) {
-    console.error('[Orchestrator] Timeout waiting for decisions');
-    // Return empty results for agents that timed out
-    return agents.map((agent) => ({
-      agentId: agent.id,
-      llmType: agent.llmType,
-      decision: null,
-      actionResult: null,
-      processingTimeMs: 30000,
-      usedFallback: false,
-      error: 'Decision timeout',
-    }));
-  }
+  // Wait for all decisions (with 30s timeout per job, uses fallback on timeout)
+  const decisionResults = await waitForDecisions(queuedJobs, 30000);
 
   // Execute actions for each decision
   const results: AgentTickResult[] = [];
@@ -111,6 +99,23 @@ export async function processAgentsTick(tick: number): Promise<AgentTickResult[]
 
       // Execute action
       actionResult = await executeAction(intent, agent);
+
+      // Log and store failed actions so agent can learn from them
+      if (!actionResult.success) {
+        console.warn(`[Orchestrator] Action ${result.decision.action} failed for ${agent.llmType}:`, actionResult.error);
+
+        // Store action_failed event so agent sees it in next tick
+        await appendEvent({
+          eventType: 'action_failed',
+          tick,
+          agentId: agent.id,
+          payload: {
+            action: result.decision.action,
+            params: result.decision.params,
+            error: actionResult.error,
+          },
+        });
+      }
 
       // Apply changes if successful
       if (actionResult.success && actionResult.changes) {
