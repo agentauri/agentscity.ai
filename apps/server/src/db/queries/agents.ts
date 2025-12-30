@@ -65,3 +65,10 @@ export async function updateAgentBalance(
 export async function killAgent(id: string): Promise<Agent | undefined> {
   return updateAgent(id, { state: 'dead', diedAt: new Date() });
 }
+
+/**
+ * Delete all agents (for world reset)
+ */
+export async function deleteAllAgents(): Promise<void> {
+  await db.delete(agents);
+}

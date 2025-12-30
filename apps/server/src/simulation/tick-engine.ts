@@ -11,6 +11,14 @@
  */
 
 import { v4 as uuid } from 'uuid';
+import {
+  startTickSpan,
+  addTickMetrics,
+  markSpanSuccess,
+  markSpanError,
+  withSpan,
+  createTracedLogger,
+} from '../telemetry';
 import { TICK_INTERVAL_MS } from '@agentscity/shared';
 import { incrementTick, getCurrentTick, getWorldState } from '../db/queries/world';
 import { getAliveAgents, updateAgent } from '../db/queries/agents';
@@ -19,7 +27,16 @@ import { publishEvent, type WorldEvent } from '../cache/pubsub';
 import { setCachedTick, setCachedWorldState, setCachedAgents } from '../cache/projections';
 import { applyNeedsDecay, type DecayResult } from './needs-decay';
 import { processAgentsTick } from '../agents/orchestrator';
+import { captureVariantSnapshot, updateVariantStatus, updateExperimentStatus, getNextPendingVariant } from '../db/queries/experiments';
+import { updateAllAgentRoles } from '../db/queries/roles';
+import { CONFIG } from '../config';
 import type { Agent } from '../db/schema';
+
+// Role update interval (every N ticks)
+const ROLE_UPDATE_INTERVAL = 20;
+
+// Traced logger for tick engine
+const logger = createTracedLogger('TickEngine');
 
 export interface TickResult {
   tick: number;
@@ -42,14 +59,53 @@ type ActionHandler = (
   agent: Agent
 ) => Promise<{ success: boolean; changes?: Partial<Agent>; events?: WorldEvent[] }>;
 
+// Experiment context for A/B testing
+export interface ExperimentContext {
+  experimentId: string;
+  variantId: string;
+  durationTicks: number;
+  startTick?: number;
+  /** Variant-specific config overrides for scientific experiments */
+  variantConfig?: {
+    /** Use random walk decisions instead of LLM (null hypothesis) */
+    useRandomWalk?: boolean;
+    /** Use only fallback decisions instead of LLM (rule-based baseline) */
+    useOnlyFallback?: boolean;
+  };
+}
+
 class TickEngine {
   private intervalId: Timer | null = null;
   private isRunning = false;
   private tickInterval: number;
   private actionHandlers: Map<string, ActionHandler> = new Map();
+  private experimentContext: ExperimentContext | null = null;
 
   constructor(tickInterval = TICK_INTERVAL_MS) {
     this.tickInterval = tickInterval;
+  }
+
+  /**
+   * Set experiment context for A/B testing
+   */
+  setExperimentContext(context: ExperimentContext): void {
+    this.experimentContext = context;
+    console.log(`[TickEngine] Experiment context set: variant ${context.variantId}, duration ${context.durationTicks} ticks`);
+  }
+
+  /**
+   * Clear experiment context
+   */
+  clearExperimentContext(): void {
+    this.experimentContext = null;
+    console.log('[TickEngine] Experiment context cleared');
+  }
+
+  /**
+   * Get current experiment context
+   */
+  getExperimentContext(): ExperimentContext | null {
+    return this.experimentContext;
   }
 
   registerActionHandler(actionType: string, handler: ActionHandler): void {
@@ -103,6 +159,9 @@ class TickEngine {
     const newState = await incrementTick();
     const tick = newState.currentTick;
 
+    // Start tracing span for this tick
+    const tickSpan = startTickSpan(tick);
+
     // Emit tick_start event
     const tickStartEvent: WorldEvent = {
       id: uuid(),
@@ -149,7 +208,8 @@ class TickEngine {
         }
       }
     } catch (error) {
-      console.error('[TickEngine] Error processing agent decisions:', error);
+      logger.error('Error processing agent decisions', error);
+      tickSpan.setAttribute('tick.error', 'agent_decisions_failed');
     }
 
     // Phase 5: DECAY - Apply needs decay
@@ -224,7 +284,80 @@ class TickEngine {
     allEvents.push(tickEndEvent);
     await publishEvent(tickEndEvent);
 
-    console.log(`Tick ${tick} completed in ${duration}ms (${aliveAgents.length} agents, ${deaths.length} deaths)`);
+    // Experiment snapshot and completion check
+    if (this.experimentContext) {
+      const ctx = this.experimentContext;
+
+      // Set start tick if not set
+      if (ctx.startTick === undefined) {
+        ctx.startTick = tick;
+      }
+
+      const ticksElapsed = tick - ctx.startTick;
+
+      // Capture snapshot at configured interval
+      if (tick % CONFIG.experiment.snapshotInterval === 0) {
+        try {
+          await captureVariantSnapshot(ctx.variantId, tick);
+          console.log(`[TickEngine] Captured snapshot for variant ${ctx.variantId} at tick ${tick}`);
+        } catch (error) {
+          console.error('[TickEngine] Error capturing snapshot:', error);
+        }
+      }
+
+      // Check if variant duration is reached
+      if (ticksElapsed >= ctx.durationTicks) {
+        console.log(`[TickEngine] Variant ${ctx.variantId} completed after ${ticksElapsed} ticks`);
+
+        // Mark variant as completed
+        await updateVariantStatus(ctx.variantId, 'completed', { endTick: tick });
+
+        // Stop the engine
+        this.stop();
+
+        // Check if there are more variants to run
+        const nextVariant = await getNextPendingVariant(ctx.experimentId);
+        if (!nextVariant) {
+          // All variants done, mark experiment as completed
+          await updateExperimentStatus(ctx.experimentId, 'completed');
+          console.log(`[TickEngine] Experiment ${ctx.experimentId} completed`);
+        } else {
+          console.log(`[TickEngine] Next variant pending: ${nextVariant.name}`);
+        }
+
+        // Clear context
+        this.clearExperimentContext();
+      }
+    }
+
+    // Role crystallization: update agent roles periodically
+    if (tick % ROLE_UPDATE_INTERVAL === 0) {
+      try {
+        const rolesUpdated = await updateAllAgentRoles(tick);
+        if (rolesUpdated > 0) {
+          console.log(`[TickEngine] Updated ${rolesUpdated} agent roles at tick ${tick}`);
+        }
+      } catch (error) {
+        console.error('[TickEngine] Error updating agent roles:', error);
+      }
+    }
+
+    logger.info(`Tick ${tick} completed in ${duration}ms`, {
+      agentCount: aliveAgents.length,
+      deaths: deaths.length,
+      actionsExecuted,
+    });
+
+    // Add metrics to tracing span and end it
+    addTickMetrics(tickSpan, {
+      agentCount: aliveAgents.length,
+      actionsExecuted,
+      deaths: deaths.length,
+      durationMs: duration,
+      isPaused: false,
+    });
+    markSpanSuccess(tickSpan);
+    tickSpan.end();
 
     return {
       tick,

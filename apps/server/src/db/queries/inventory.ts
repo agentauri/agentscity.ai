@@ -94,3 +94,10 @@ export async function removeFromInventory(
     return newQuantity;
   }
 }
+
+/**
+ * Delete all inventory items (for world reset)
+ */
+export async function deleteAllInventory(): Promise<void> {
+  await db.delete(inventory);
+}

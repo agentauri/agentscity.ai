@@ -8,6 +8,7 @@
 import { v4 as uuid } from 'uuid';
 import type { ActionIntent, ActionResult, SleepParams } from '../types';
 import type { Agent } from '../../db/schema';
+import { storeMemory } from '../../db/queries/memories';
 
 // Sleep configuration
 const CONFIG = {
@@ -42,6 +43,18 @@ export async function handleSleep(
   // In full implementation, this would be spread over ticks
   const energyRestored = CONFIG.energyRestoredPerTick * duration;
   const newEnergy = Math.min(100, agent.energy + energyRestored);
+
+  // Store memory of sleeping
+  await storeMemory({
+    agentId: agent.id,
+    type: 'action',
+    content: `Slept for ${duration} tick(s), restored ${energyRestored} energy. Energy now ${newEnergy}.`,
+    importance: 5,
+    emotionalValence: 0.4,
+    x: agent.x,
+    y: agent.y,
+    tick: intent.tick,
+  });
 
   // Success - return changes and events
   return {

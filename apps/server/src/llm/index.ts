@@ -3,24 +3,31 @@
  */
 
 import type { LLMAdapter, LLMType } from './types';
-import { ClaudeCLIAdapter } from './adapters/claude-cli';
-import { CodexCLIAdapter } from './adapters/codex-cli';
-import { GeminiCLIAdapter } from './adapters/gemini-cli';
+// API adapters (reliable, controllable)
+import { ClaudeAPIAdapter } from './adapters/claude-api';
+import { OpenAIAPIAdapter } from './adapters/openai-api';
+import { GeminiAPIAdapter } from './adapters/gemini-api';
 import { DeepSeekAPIAdapter } from './adapters/deepseek-api';
 import { QwenAPIAdapter } from './adapters/qwen-api';
 import { GLMAPIAdapter } from './adapters/glm-api';
+import { GrokAPIAdapter } from './adapters/grok-api';
+import { CONFIG } from '../config';
 
 // Adapter registry
 const adapters: Map<LLMType, LLMAdapter> = new Map();
 
-// Initialize adapters
+// Initialize adapters with configurable timeout
 function initAdapters(): void {
-  adapters.set('claude', new ClaudeCLIAdapter());
-  adapters.set('codex', new CodexCLIAdapter());
-  adapters.set('gemini', new GeminiCLIAdapter());
-  adapters.set('deepseek', new DeepSeekAPIAdapter());
-  adapters.set('qwen', new QwenAPIAdapter());
-  adapters.set('glm', new GLMAPIAdapter());
+  const timeout = CONFIG.llm.defaultTimeoutMs;
+  // Primary LLMs via API (reliable)
+  adapters.set('claude', new ClaudeAPIAdapter(timeout));
+  adapters.set('codex', new OpenAIAPIAdapter(timeout));
+  adapters.set('gemini', new GeminiAPIAdapter(timeout));
+  // Secondary LLMs via API
+  adapters.set('deepseek', new DeepSeekAPIAdapter(timeout));
+  adapters.set('qwen', new QwenAPIAdapter(timeout));
+  adapters.set('glm', new GLMAPIAdapter(timeout));
+  adapters.set('grok', new GrokAPIAdapter(timeout));
 }
 
 // Initialize on module load
@@ -73,3 +80,9 @@ export async function logAdapterStatus(): Promise<void> {
 export * from './types';
 export { buildFullPrompt, buildAvailableActions } from './prompt-builder';
 export { parseResponse, getFallbackDecision } from './response-parser';
+
+// Export external agent adapter (Phase 3: A2A Protocol)
+export { ExternalAgentAdapter, createExternalAgentAdapter } from './adapters/external-api';
+
+// Export scientific experiment decision generators
+export { getRandomWalkDecision, getRandomExplorerDecision } from './random-walk';

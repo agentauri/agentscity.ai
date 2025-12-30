@@ -32,9 +32,10 @@ export class GeminiCLIAdapter extends BaseLLMAdapter {
   }
 
   protected async callLLM(prompt: string): Promise<string> {
-    // Gemini CLI uses positional argument for prompt
+    // Gemini CLI reads from stdin (help: "Appended to input on stdin (if any)")
     // --sandbox disables tool use to prevent loading project context
-    const proc = Bun.spawn(['gemini', '--sandbox', prompt], {
+    const proc = Bun.spawn(['gemini', '--sandbox'], {
+      stdin: new TextEncoder().encode(prompt),
       stdout: 'pipe',
       stderr: 'pipe',
       cwd: '/tmp', // Avoid loading project context

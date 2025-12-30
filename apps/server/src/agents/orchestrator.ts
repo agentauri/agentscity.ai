@@ -2,14 +2,18 @@
  * Agent Orchestrator - Manages agent decision loop
  *
  * Scientific Model: uses resource spawns and shelters instead of typed locations
+ * Phase 3: External agents with webhooks are handled directly, not through BullMQ
  */
 
 import { getAliveAgents, updateAgent } from '../db/queries/agents';
 import { getAllResourceSpawns, getAllShelters } from '../db/queries/world';
 import { getEventsByAgent, appendEvent } from '../db/queries/events';
+import { getExternalAgentByAgentId } from '../db/queries/external-agents';
 import type { Agent } from '../db/schema';
-import type { LLMType, AgentDecision } from '../llm/types';
-import { queueDecisions, waitForDecisions, type DecisionJobResult } from '../queue';
+import type { LLMType, AgentDecision, AgentObservation } from '../llm/types';
+import { createExternalAgentAdapter, getFallbackDecision, getRandomWalkDecision } from '../llm';
+import { queueDecisions, waitForDecisions, type DecisionJobResult, type DecisionJobData } from '../queue';
+import { tickEngine } from '../simulation/tick-engine';
 import { buildObservation, formatEvent } from './observer';
 import { executeAction, createIntent } from '../actions';
 import type { ActionResult } from '../actions/types';
@@ -22,6 +26,68 @@ export interface AgentTickResult {
   processingTimeMs: number;
   usedFallback: boolean;
   error?: string;
+}
+
+/**
+ * Create fallback decision for external agents
+ */
+function createFallbackDecision(observation: AgentObservation): AgentDecision {
+  return getFallbackDecision(
+    observation.self.hunger,
+    observation.self.energy,
+    observation.self.balance,
+    observation.self.x,
+    observation.self.y
+  );
+}
+
+/**
+ * Process external agents with webhooks directly (Phase 3: A2A Protocol)
+ * These bypass the BullMQ queue for lower latency
+ */
+async function processExternalAgents(
+  externalAgents: Array<{ agent: Agent; observation: AgentObservation; endpoint: string }>,
+  tick: number
+): Promise<DecisionJobResult[]> {
+  if (externalAgents.length === 0) return [];
+
+  console.log(`[Orchestrator] Processing ${externalAgents.length} external agents with webhooks`);
+
+  // Process all external agents in parallel
+  const results = await Promise.all(
+    externalAgents.map(async ({ agent, observation, endpoint }) => {
+      const startTime = Date.now();
+
+      try {
+        // Create adapter for this agent's endpoint
+        const adapter = createExternalAgentAdapter(endpoint);
+
+        // Get decision from external agent
+        const decision = await adapter.decide(observation);
+
+        return {
+          agentId: agent.id,
+          tick,
+          decision,
+          processingTimeMs: Date.now() - startTime,
+          usedFallback: false,
+        };
+      } catch (error) {
+        console.error(`[Orchestrator] External agent ${agent.id} error:`, error);
+
+        // Use fallback decision on error
+        return {
+          agentId: agent.id,
+          tick,
+          decision: createFallbackDecision(observation),
+          processingTimeMs: Date.now() - startTime,
+          usedFallback: true,
+        };
+      }
+    })
+  );
+
+  return results;
 }
 
 /**
@@ -42,8 +108,8 @@ export async function processAgentsTick(tick: number): Promise<AgentTickResult[]
 
   console.log(`[Orchestrator] Processing ${agents.length} agents for tick ${tick}`);
 
-  // Build observations and queue decisions
-  const jobs = await Promise.all(
+  // Build observations for all agents
+  const agentObservations = await Promise.all(
     agents.map(async (agent) => {
       // Get recent events for this agent
       const recentDbEvents = await getEventsByAgent(agent.id, 10);
@@ -57,20 +123,74 @@ export async function processAgentsTick(tick: number): Promise<AgentTickResult[]
 
       const observation = await buildObservation(agent, tick, agents, resourceSpawns, shelters, recentEvents);
 
-      return {
-        agentId: agent.id,
-        llmType: agent.llmType as LLMType,
-        tick,
-        observation,
-      };
+      return { agent, observation };
     })
   );
 
-  // Queue all decisions
-  const queuedJobs = await queueDecisions(jobs);
+  // Separate external agents with webhooks from regular agents
+  const externalWithWebhooks: Array<{ agent: Agent; observation: AgentObservation; endpoint: string }> = [];
+  const regularAgents: Array<{ agent: Agent; observation: AgentObservation }> = [];
 
-  // Wait for all decisions (with 30s timeout per job, uses fallback on timeout)
-  const decisionResults = await waitForDecisions(queuedJobs, 30000);
+  for (const { agent, observation } of agentObservations) {
+    if (agent.llmType === 'external') {
+      // Check if this external agent has a webhook endpoint
+      const externalAgent = await getExternalAgentByAgentId(agent.id);
+      if (externalAgent?.endpoint && externalAgent.isActive) {
+        externalWithWebhooks.push({ agent, observation, endpoint: externalAgent.endpoint });
+      } else {
+        // External agent without webhook (poll mode) - skip, they submit via API
+        console.log(`[Orchestrator] External agent ${agent.id} in poll mode, skipping`);
+      }
+    } else {
+      regularAgents.push({ agent, observation });
+    }
+  }
+
+  // Process external agents with webhooks directly (parallel)
+  const externalDecisions = await processExternalAgents(externalWithWebhooks, tick);
+
+  // Check for experiment mode overrides
+  const experimentContext = tickEngine.getExperimentContext();
+  const useRandomWalk = experimentContext?.variantConfig?.useRandomWalk;
+  const useOnlyFallback = experimentContext?.variantConfig?.useOnlyFallback;
+
+  let queuedDecisionResults: DecisionJobResult[];
+
+  if (useRandomWalk) {
+    // RANDOM WALK MODE: Use random movement decisions (null hypothesis experiment)
+    console.log(`[Orchestrator] EXPERIMENT: Random walk mode for ${regularAgents.length} agents`);
+    queuedDecisionResults = regularAgents.map(({ agent, observation }) => ({
+      agentId: agent.id,
+      tick,
+      decision: getRandomWalkDecision(observation),
+      processingTimeMs: 0,
+      usedFallback: true, // Mark as fallback for tracking
+    }));
+  } else if (useOnlyFallback) {
+    // FALLBACK-ONLY MODE: Use rule-based decisions (baseline experiment)
+    console.log(`[Orchestrator] EXPERIMENT: Fallback-only mode for ${regularAgents.length} agents`);
+    queuedDecisionResults = regularAgents.map(({ agent, observation }) => ({
+      agentId: agent.id,
+      tick,
+      decision: createFallbackDecision(observation),
+      processingTimeMs: 0,
+      usedFallback: true,
+    }));
+  } else {
+    // NORMAL MODE: Queue regular agent decisions through BullMQ
+    const jobs = regularAgents.map(({ agent, observation }) => ({
+      agentId: agent.id,
+      llmType: agent.llmType as LLMType,
+      tick,
+      observation,
+    }));
+
+    const queuedJobs = await queueDecisions(jobs);
+    queuedDecisionResults = await waitForDecisions(queuedJobs, 30000);
+  }
+
+  // Combine all decision results
+  const decisionResults = [...externalDecisions, ...queuedDecisionResults];
 
   // Execute actions for each decision
   const results: AgentTickResult[] = [];

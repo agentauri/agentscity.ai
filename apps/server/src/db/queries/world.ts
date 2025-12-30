@@ -144,6 +144,30 @@ export async function regenerateResources(): Promise<void> {
 // =============================================================================
 
 /**
+ * Delete all shelters
+ */
+export async function deleteAllShelters(): Promise<void> {
+  await db.delete(shelters);
+}
+
+/**
+ * Delete all resource spawns
+ */
+export async function deleteAllResourceSpawns(): Promise<void> {
+  await db.delete(resourceSpawns);
+}
+
+/**
+ * Reset tick counter to 0
+ */
+export async function resetTickCounter(): Promise<void> {
+  await db
+    .update(worldState)
+    .set({ currentTick: 0, startedAt: new Date(), lastTickAt: null })
+    .where(eq(worldState.id, WORLD_STATE_ID));
+}
+
+/**
  * Reset all world data (for full simulation reset)
  */
 export async function resetWorldData(): Promise<void> {

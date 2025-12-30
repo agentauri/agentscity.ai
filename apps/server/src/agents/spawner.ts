@@ -5,25 +5,32 @@
  * - No predefined location types (commercial, residential, etc.)
  * - Resources are geographically distributed (Sugarscape-style)
  * - Shelters are generic structures (agents decide function)
+ *
+ * A/B Testing Support:
+ * - Parametric spawning with custom agent/resource configurations
+ * - Reproducible worlds via optional seed
  */
 
 import { v4 as uuid } from 'uuid';
-import { createAgent, getAllAgents } from '../db/queries/agents';
+import { createAgent, getAllAgents, deleteAllAgents } from '../db/queries/agents';
 import {
   getAllShelters,
   createShelter,
   getAllResourceSpawns,
   createResourceSpawn,
+  deleteAllShelters,
+  deleteAllResourceSpawns,
 } from '../db/queries/world';
-import { addToInventory } from '../db/queries/inventory';
+import { addToInventory, deleteAllInventory } from '../db/queries/inventory';
 import type { NewAgent, NewShelter, NewResourceSpawn } from '../db/schema';
 import type { LLMType } from '../llm/types';
+import { CONFIG } from '../config';
 
 // =============================================================================
 // Agent Configurations
 // =============================================================================
 
-interface AgentConfig {
+export interface AgentConfig {
   llmType: LLMType;
   name: string;
   color: string;
@@ -38,13 +45,14 @@ const AGENT_CONFIGS: AgentConfig[] = [
   { llmType: 'deepseek', name: 'DeepSeek', color: '#f59e0b', startX: 28, startY: 22 },
   { llmType: 'qwen', name: 'Qwen', color: '#8b5cf6', startX: 30, startY: 22 },
   { llmType: 'glm', name: 'GLM', color: '#ec4899', startX: 32, startY: 22 },
+  { llmType: 'grok', name: 'Grok', color: '#1d4ed8', startX: 30, startY: 24 },
 ];
 
 // =============================================================================
 // Resource Spawn Configurations (Sugarscape-style)
 // =============================================================================
 
-interface ResourceSpawnConfig {
+export interface ResourceSpawnConfig {
   resourceType: 'food' | 'energy' | 'material';
   x: number;
   y: number;
@@ -85,7 +93,7 @@ const RESOURCE_SPAWN_CONFIGS: ResourceSpawnConfig[] = [
 // Shelter Configurations
 // =============================================================================
 
-interface ShelterConfig {
+export interface ShelterConfig {
   x: number;
   y: number;
   canSleep: boolean;
@@ -188,28 +196,31 @@ export async function spawnInitialAgents(): Promise<void> {
     return;
   }
 
-  console.log('[Spawner] Spawning 6 MVP agents...');
+  console.log('[Spawner] Spawning 7 MVP agents...');
 
-  for (const config of AGENT_CONFIGS) {
+  // Scarcity mode: reduced starting resources to encourage emergent behavior
+  const startingFood = 1; // Reduced from 3 to create urgency
+
+  for (const agentConfig of AGENT_CONFIGS) {
     const agent: NewAgent = {
       id: uuid(),
-      llmType: config.llmType,
-      x: config.startX,
-      y: config.startY,
-      hunger: 100,
-      energy: 100,
-      health: 100,
-      balance: 100, // Starting balance
+      llmType: agentConfig.llmType,
+      x: agentConfig.startX,
+      y: agentConfig.startY,
+      hunger: CONFIG.agent.startingHunger,
+      energy: CONFIG.agent.startingEnergy,
+      health: CONFIG.agent.startingHealth,
+      balance: CONFIG.agent.startingBalance,
       state: 'idle',
-      color: config.color,
+      color: agentConfig.color,
     };
 
     await createAgent(agent);
 
-    // Give starting inventory (3 food to survive initial ticks)
-    await addToInventory(agent.id, 'food', 3);
+    // Give starting inventory (reduced for scarcity)
+    await addToInventory(agent.id, 'food', startingFood);
 
-    console.log(`  ✅ ${config.name} (${config.llmType}) spawned at (${config.startX}, ${config.startY}) with 3 food`);
+    console.log(`  ✅ ${agentConfig.name} (${agentConfig.llmType}) spawned at (${agentConfig.startX}, ${agentConfig.startY}) with ${startingFood} food`);
   }
 
   console.log('[Spawner] All agents spawned');
@@ -257,4 +268,114 @@ export async function spawnLocationsFromGrid(): Promise<void> {
 export async function spawnAgentsAtLocations(): Promise<void> {
   console.log('[Spawner] WARNING: spawnAgentsAtLocations is deprecated, using spawnInitialAgents');
   await spawnInitialAgents();
+}
+
+// =============================================================================
+// Parametric Spawning (A/B Testing Support)
+// =============================================================================
+
+export interface SpawnConfiguration {
+  agents?: AgentConfig[];
+  resourceSpawns?: ResourceSpawnConfig[];
+  shelters?: ShelterConfig[];
+  seed?: number;
+  startingFood?: number;
+}
+
+/**
+ * Get default configurations (for reference/modification)
+ */
+export function getDefaultConfigurations(): SpawnConfiguration {
+  return {
+    agents: [...AGENT_CONFIGS],
+    resourceSpawns: [...RESOURCE_SPAWN_CONFIGS],
+    shelters: [...SHELTER_CONFIGS],
+    startingFood: 1,
+  };
+}
+
+/**
+ * Clear all world entities (agents, resources, shelters)
+ * Used before spawning a new variant
+ */
+export async function clearWorld(): Promise<void> {
+  console.log('[Spawner] Clearing world...');
+
+  // Delete in order: inventory -> agents -> shelters -> resources
+  await deleteAllInventory();
+  await deleteAllAgents();
+  await deleteAllShelters();
+  await deleteAllResourceSpawns();
+
+  console.log('[Spawner] World cleared');
+}
+
+/**
+ * Spawn world with custom configuration (for A/B testing)
+ */
+export async function spawnWorldWithConfig(config?: SpawnConfiguration): Promise<void> {
+  const agents = config?.agents ?? AGENT_CONFIGS;
+  const resourceSpawns = config?.resourceSpawns ?? RESOURCE_SPAWN_CONFIGS;
+  const shelters = config?.shelters ?? SHELTER_CONFIGS;
+  const startingFood = config?.startingFood ?? 1;
+
+  console.log(`[Spawner] Spawning world with custom config: ${agents.length} agents, ${resourceSpawns.length} resources, ${shelters.length} shelters`);
+
+  // Spawn resource spawns
+  for (const rsConfig of resourceSpawns) {
+    const spawn: NewResourceSpawn = {
+      id: uuid(),
+      x: rsConfig.x,
+      y: rsConfig.y,
+      resourceType: rsConfig.resourceType,
+      maxAmount: rsConfig.maxAmount,
+      currentAmount: rsConfig.maxAmount,
+      regenRate: rsConfig.regenRate,
+    };
+    await createResourceSpawn(spawn);
+  }
+  console.log(`  ✅ ${resourceSpawns.length} resource spawns created`);
+
+  // Spawn shelters
+  for (const shelterConfig of shelters) {
+    const shelter: NewShelter = {
+      id: uuid(),
+      x: shelterConfig.x,
+      y: shelterConfig.y,
+      canSleep: shelterConfig.canSleep,
+    };
+    await createShelter(shelter);
+  }
+  console.log(`  ✅ ${shelters.length} shelters created`);
+
+  // Spawn agents
+  for (const agentConfig of agents) {
+    const agent: NewAgent = {
+      id: uuid(),
+      llmType: agentConfig.llmType,
+      x: agentConfig.startX,
+      y: agentConfig.startY,
+      hunger: CONFIG.agent.startingHunger,
+      energy: CONFIG.agent.startingEnergy,
+      health: CONFIG.agent.startingHealth,
+      balance: CONFIG.agent.startingBalance,
+      state: 'idle',
+      color: agentConfig.color,
+    };
+
+    await createAgent(agent);
+    await addToInventory(agent.id, 'food', startingFood);
+
+    console.log(`  ✅ ${agentConfig.name} (${agentConfig.llmType}) spawned`);
+  }
+
+  console.log('[Spawner] World spawned with custom configuration');
+}
+
+/**
+ * Reset world with custom configuration (clear + spawn)
+ */
+export async function resetWorldWithConfig(config?: SpawnConfiguration): Promise<void> {
+  await clearWorld();
+  await spawnWorldWithConfig(config);
 }

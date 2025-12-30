@@ -1,0 +1,151 @@
+# Dependabot configuration for automated dependency updates
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  # Root package dependencies (Bun workspace)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "automated"
+    groups:
+      # Group TypeScript-related updates
+      typescript:
+        patterns:
+          - "typescript"
+          - "@types/*"
+      # Group build tools
+      build-tools:
+        patterns:
+          - "esbuild"
+          - "vite"
+          - "@vitejs/*"
+
+  # Server app dependencies
+  - package-ecosystem: "npm"
+    directory: "/apps/server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps(server)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "server"
+      - "automated"
+    groups:
+      # Group Fastify ecosystem
+      fastify:
+        patterns:
+          - "fastify"
+          - "fastify-*"
+          - "@fastify/*"
+      # Group database tools
+      database:
+        patterns:
+          - "drizzle-*"
+          - "postgres"
+      # Group AI/LLM SDKs
+      ai-sdks:
+        patterns:
+          - "@anthropic-ai/*"
+          - "@google/*"
+          - "openai"
+      # Group observability tools
+      observability:
+        patterns:
+          - "@opentelemetry/*"
+      # Group Redis/Queue tools
+      queue:
+        patterns:
+          - "bullmq"
+          - "ioredis"
+
+  # Web app dependencies
+  - package-ecosystem: "npm"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps(web)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "web"
+      - "automated"
+    groups:
+      # Group React ecosystem
+      react:
+        patterns:
+          - "react"
+          - "react-*"
+          - "@types/react*"
+      # Group styling tools
+      styling:
+        patterns:
+          - "tailwindcss"
+          - "@tailwindcss/*"
+          - "postcss"
+          - "autoprefixer"
+      # Group Vite ecosystem
+      vite:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+
+  # Shared package dependencies
+  - package-ecosystem: "npm"
+    directory: "/packages/shared"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(shared)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "shared"
+      - "automated"
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "ci/cd"
+      - "dependencies"
+      - "automated"
+    groups:
+      # Group all GitHub Actions updates
+      actions:
+        patterns:
+          - "*"

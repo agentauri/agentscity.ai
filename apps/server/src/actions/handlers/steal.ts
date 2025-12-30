@@ -17,6 +17,7 @@ import type { Agent } from '../../db/schema';
 import { getAgentById, getAliveAgents } from '../../db/queries/agents';
 import { getInventoryItem, addToInventory, removeFromInventory } from '../../db/queries/inventory';
 import { updateRelationshipTrust, storeMemory } from '../../db/queries/memories';
+import { checkIsRetaliation, recordRetaliationChain } from '../../db/queries/roles';
 import { getDistance, getVisibleAgents } from '../../world/grid';
 import { CONFIG } from '../../config';
 
@@ -105,6 +106,22 @@ export async function handleSteal(
     // Transfer items
     await removeFromInventory(targetAgentId, targetItemType, quantity);
     await addToInventory(agent.id, targetItemType, quantity);
+
+    // Track retaliation chain
+    const retaliationCheck = await checkIsRetaliation(agent.id, targetAgentId);
+    if (retaliationCheck.isRetaliation) {
+      await recordRetaliationChain(
+        agent.id,
+        targetAgentId,
+        'steal',
+        intent.tick,
+        retaliationCheck.existingChainId,
+        retaliationCheck.depth
+      );
+    } else {
+      // Start a new potential chain (depth 0 = initial attack)
+      await recordRetaliationChain(agent.id, targetAgentId, 'steal', intent.tick, null, 0);
+    }
 
     // Update victim trust
     await updateRelationshipTrust(

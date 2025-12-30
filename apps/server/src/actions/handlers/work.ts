@@ -12,6 +12,7 @@ import { v4 as uuid } from 'uuid';
 import type { ActionIntent, ActionResult, WorkParams } from '../types';
 import type { Agent } from '../../db/schema';
 import { getSheltersAtPosition } from '../../db/queries/world';
+import { storeMemory } from '../../db/queries/memories';
 
 // Work configuration
 const CONFIG = {
@@ -71,6 +72,18 @@ export async function handleWork(
   // Previously set state to 'working' which caused agents to get stuck
   const newBalance = agent.balance + salary;
   const newEnergy = agent.energy - energyCost;
+
+  // Store memory of working
+  await storeMemory({
+    agentId: agent.id,
+    type: 'action',
+    content: `Worked for ${duration} tick(s) at (${agent.x}, ${agent.y}), earned ${salary} CITY. Balance now ${newBalance} CITY.`,
+    importance: 4,
+    emotionalValence: 0.3,
+    x: agent.x,
+    y: agent.y,
+    tick: intent.tick,
+  });
 
   return {
     success: true,

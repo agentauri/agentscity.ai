@@ -1,6 +1,10 @@
 /**
  * Database schema for Agents City
  * Using Drizzle ORM with PostgreSQL
+ *
+ * Multi-tenancy: Tables that support tenant isolation have a tenant_id column.
+ * The tenant_id is nullable to support backward compatibility with the
+ * single-tenant "default" world. New tenant-scoped data MUST have tenant_id set.
  */
 
 import {
@@ -19,7 +23,85 @@ import {
 } from 'drizzle-orm/pg-core';
 
 // =============================================================================
-// WORLD STATE
+// TENANTS (Multi-tenancy support)
+// =============================================================================
+
+export const tenants = pgTable('tenants', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 255 }).notNull(),
+
+  // Authentication
+  apiKeyHash: varchar('api_key_hash', { length: 128 }).notNull().unique(),
+
+  // Resource limits
+  maxAgents: integer('max_agents').notNull().default(20),
+  maxTicksPerDay: integer('max_ticks_per_day').notNull().default(1000),
+  maxEventsStored: integer('max_events_stored').notNull().default(100000),
+
+  // Simulation settings
+  tickIntervalMs: integer('tick_interval_ms').notNull().default(60000),
+  gridWidth: integer('grid_width').notNull().default(100),
+  gridHeight: integer('grid_height').notNull().default(100),
+
+  // Status
+  isActive: boolean('is_active').notNull().default(true),
+  isPaused: boolean('is_paused').notNull().default(false),
+
+  // Metadata
+  description: varchar('description', { length: 1000 }),
+  ownerEmail: varchar('owner_email', { length: 255 }),
+
+  // Timestamps
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
+}, (table) => [
+  index('tenants_api_key_hash_idx').on(table.apiKeyHash),
+  index('tenants_is_active_idx').on(table.isActive),
+]);
+
+// =============================================================================
+// TENANT USAGE TRACKING
+// =============================================================================
+
+export const tenantUsage = pgTable('tenant_usage', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Usage date (for daily aggregation)
+  usageDate: timestamp('usage_date', { withTimezone: true }).notNull(),
+
+  // Counters
+  ticksProcessed: integer('ticks_processed').notNull().default(0),
+  eventsGenerated: integer('events_generated').notNull().default(0),
+  llmCallsMade: integer('llm_calls_made').notNull().default(0),
+
+  // Timestamps
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('tenant_usage_tenant_idx').on(table.tenantId),
+  index('tenant_usage_date_idx').on(table.usageDate),
+  uniqueIndex('tenant_usage_tenant_date_idx').on(table.tenantId, table.usageDate),
+]);
+
+// =============================================================================
+// TENANT WORLD STATE
+// =============================================================================
+
+export const tenantWorldState = pgTable('tenant_world_state', {
+  tenantId: uuid('tenant_id').primaryKey().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Simulation state
+  currentTick: bigint('current_tick', { mode: 'number' }).notNull().default(0),
+
+  // Timestamps
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  lastTickAt: timestamp('last_tick_at', { withTimezone: true }),
+});
+
+// =============================================================================
+// WORLD STATE (Legacy - for default/single-tenant mode)
 // =============================================================================
 
 export const worldState = pgTable('world_state', {
@@ -36,6 +118,10 @@ export const worldState = pgTable('world_state', {
 
 export const agents = pgTable('agents', {
   id: uuid('id').primaryKey(),
+
+  // Multi-tenancy: null = default/legacy world
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
   llmType: varchar('llm_type', { length: 20 }).notNull(), // claude, codex, gemini, deepseek, qwen, glm
 
   // Position
@@ -59,8 +145,10 @@ export const agents = pgTable('agents', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   diedAt: timestamp('died_at', { withTimezone: true }),
 }, (table) => [
+  index('agents_tenant_idx').on(table.tenantId),
   index('agents_state_idx').on(table.state),
   index('agents_position_idx').on(table.x, table.y),
+  index('agents_tenant_state_idx').on(table.tenantId, table.state),
 ]);
 
 // =============================================================================
@@ -69,6 +157,9 @@ export const agents = pgTable('agents', {
 
 export const shelters = pgTable('shelters', {
   id: uuid('id').primaryKey(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
 
   // Position
   x: integer('x').notNull(),
@@ -82,7 +173,9 @@ export const shelters = pgTable('shelters', {
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index('shelters_tenant_idx').on(table.tenantId),
   index('shelters_position_idx').on(table.x, table.y),
+  index('shelters_tenant_position_idx').on(table.tenantId, table.x, table.y),
 ]);
 
 // =============================================================================
@@ -91,6 +184,9 @@ export const shelters = pgTable('shelters', {
 
 export const resourceSpawns = pgTable('resource_spawns', {
   id: uuid('id').primaryKey(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
 
   // Position
   x: integer('x').notNull(),
@@ -104,8 +200,10 @@ export const resourceSpawns = pgTable('resource_spawns', {
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index('resource_spawns_tenant_idx').on(table.tenantId),
   index('resource_spawns_position_idx').on(table.x, table.y),
   index('resource_spawns_type_idx').on(table.resourceType),
+  index('resource_spawns_tenant_type_idx').on(table.tenantId, table.resourceType),
 ]);
 
 // =============================================================================
@@ -114,12 +212,17 @@ export const resourceSpawns = pgTable('resource_spawns', {
 
 export const inventory = pgTable('inventory', {
   id: uuid('id').primaryKey(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
   agentId: uuid('agent_id').notNull().references(() => agents.id),
   itemType: varchar('item_type', { length: 50 }).notNull(), // food, tool, resource
   quantity: integer('quantity').notNull().default(1),
   properties: jsonb('properties').default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index('inventory_tenant_idx').on(table.tenantId),
   index('inventory_agent_idx').on(table.agentId),
   uniqueIndex('inventory_agent_item_idx').on(table.agentId, table.itemType),
 ]);
@@ -130,6 +233,10 @@ export const inventory = pgTable('inventory', {
 
 export const ledger = pgTable('ledger', {
   id: uuid('id').primaryKey(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
   txId: uuid('tx_id').notNull(), // Groups debit/credit pair
   tick: bigint('tick', { mode: 'number' }).notNull(),
 
@@ -147,6 +254,7 @@ export const ledger = pgTable('ledger', {
   // Metadata
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index('ledger_tenant_idx').on(table.tenantId),
   index('ledger_tick_idx').on(table.tick),
   index('ledger_from_idx').on(table.fromAgentId),
   index('ledger_to_idx').on(table.toAgentId),
@@ -159,6 +267,10 @@ export const ledger = pgTable('ledger', {
 
 export const events = pgTable('events', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
   tick: bigint('tick', { mode: 'number' }).notNull(),
 
   // Event source
@@ -173,11 +285,13 @@ export const events = pgTable('events', {
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index('events_tenant_idx').on(table.tenantId),
   index('events_tick_idx').on(table.tick),
   index('events_agent_idx').on(table.agentId),
   index('events_type_idx').on(table.eventType),
   uniqueIndex('events_agent_version_idx').on(table.agentId, table.version),
-  // Phase 2: Composite index for analytics queries
+  // Composite indexes for tenant-scoped queries
+  index('events_tenant_tick_idx').on(table.tenantId, table.tick),
   index('events_type_tick_idx').on(table.eventType, table.tick),
 ]);
 
@@ -187,6 +301,10 @@ export const events = pgTable('events', {
 
 export const agentMemories = pgTable('agent_memories', {
   id: uuid('id').primaryKey(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
   agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
 
   // Memory classification
@@ -212,6 +330,7 @@ export const agentMemories = pgTable('agent_memories', {
   tick: bigint('tick', { mode: 'number' }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index('agent_memories_tenant_idx').on(table.tenantId),
   index('agent_memories_agent_idx').on(table.agentId),
   index('agent_memories_tick_idx').on(table.tick),
   index('agent_memories_type_idx').on(table.type),
@@ -224,6 +343,10 @@ export const agentMemories = pgTable('agent_memories', {
 
 export const agentRelationships = pgTable('agent_relationships', {
   id: uuid('id').primaryKey(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
   agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
   otherAgentId: uuid('other_agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
 
@@ -241,10 +364,10 @@ export const agentRelationships = pgTable('agent_relationships', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index('agent_relationships_tenant_idx').on(table.tenantId),
   index('agent_relationships_agent_idx').on(table.agentId),
   index('agent_relationships_other_idx').on(table.otherAgentId),
   uniqueIndex('agent_relationships_pair_idx').on(table.agentId, table.otherAgentId),
-  // Phase 2: Index for community detection queries
   index('agent_relationships_trust_idx').on(table.trustScore),
 ]);
 
@@ -254,6 +377,10 @@ export const agentRelationships = pgTable('agent_relationships', {
 
 export const agentKnowledge = pgTable('agent_knowledge', {
   id: uuid('id').primaryKey(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
   agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
   knownAgentId: uuid('known_agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
 
@@ -264,7 +391,6 @@ export const agentKnowledge = pgTable('agent_knowledge', {
 
   // Information about the known agent (may be stale or false)
   sharedInfo: jsonb('shared_info').notNull().default({}),
-  // Example: { lastKnownPosition: {x, y}, reputationClaim: {sentiment, claim}, skills: [] }
 
   // When the information was received (tick)
   informationAge: bigint('information_age', { mode: 'number' }).notNull(),
@@ -273,10 +399,10 @@ export const agentKnowledge = pgTable('agent_knowledge', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index('agent_knowledge_tenant_idx').on(table.tenantId),
   index('agent_knowledge_agent_idx').on(table.agentId),
   index('agent_knowledge_known_idx').on(table.knownAgentId),
   uniqueIndex('agent_knowledge_pair_idx').on(table.agentId, table.knownAgentId),
-  // Phase 2: Index for referral chain analytics
   index('agent_knowledge_discovery_idx').on(table.discoveryType),
 ]);
 
@@ -286,6 +412,10 @@ export const agentKnowledge = pgTable('agent_knowledge', {
 
 export const agentClaims = pgTable('agent_claims', {
   id: uuid('id').primaryKey(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
   agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
 
   // Claimed position
@@ -308,10 +438,10 @@ export const agentClaims = pgTable('agent_claims', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index('agent_claims_tenant_idx').on(table.tenantId),
   index('agent_claims_agent_idx').on(table.agentId),
   index('agent_claims_position_idx').on(table.x, table.y),
   index('agent_claims_type_idx').on(table.claimType),
-  // Allow multiple claims per position (contested territories)
 ]);
 
 // =============================================================================
@@ -320,6 +450,9 @@ export const agentClaims = pgTable('agent_claims', {
 
 export const locationNames = pgTable('location_names', {
   id: uuid('id').primaryKey(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
 
   // Location being named
   x: integer('x').notNull(),
@@ -340,6 +473,7 @@ export const locationNames = pgTable('location_names', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index('location_names_tenant_idx').on(table.tenantId),
   index('location_names_position_idx').on(table.x, table.y),
   index('location_names_name_idx').on(table.name),
   uniqueIndex('location_names_position_name_idx').on(table.x, table.y, table.name),
@@ -351,18 +485,195 @@ export const locationNames = pgTable('location_names', {
 
 export const snapshots = pgTable('snapshots', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
   agentId: uuid('agent_id').notNull().references(() => agents.id),
   state: jsonb('state').notNull(),
   eventVersion: bigint('event_version', { mode: 'number' }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index('snapshots_tenant_idx').on(table.tenantId),
   uniqueIndex('snapshots_agent_version_idx').on(table.agentId, table.eventVersion),
+]);
+
+// =============================================================================
+// EXPERIMENTS (A/B Testing Framework)
+// =============================================================================
+
+export const experiments = pgTable('experiments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  status: varchar('status', { length: 50 }).notNull().default('planning'), // planning, running, completed, cancelled
+  hypothesis: text('hypothesis'),
+  metrics: jsonb('metrics').$type<string[]>(), // Which metrics to track
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (table) => [
+  index('experiments_tenant_idx').on(table.tenantId),
+  index('experiments_status_idx').on(table.status),
+]);
+
+export const experimentVariants = pgTable('experiment_variants', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  experimentId: uuid('experiment_id').notNull().references(() => experiments.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  configOverrides: jsonb('config_overrides').$type<Record<string, unknown>>(), // Override CONFIG values
+  agentConfigs: jsonb('agent_configs').$type<Array<{
+    llmType: string;
+    name: string;
+    color: string;
+    startX: number;
+    startY: number;
+  }>>(),
+  worldSeed: integer('world_seed'), // For reproducibility
+  status: varchar('status', { length: 50 }).notNull().default('pending'), // pending, running, completed, failed
+  startTick: bigint('start_tick', { mode: 'number' }),
+  endTick: bigint('end_tick', { mode: 'number' }),
+  durationTicks: integer('duration_ticks').default(100), // How many ticks to run
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (table) => [
+  index('experiment_variants_experiment_idx').on(table.experimentId),
+  index('experiment_variants_status_idx').on(table.status),
+]);
+
+export const variantSnapshots = pgTable('variant_snapshots', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  variantId: uuid('variant_id').notNull().references(() => experimentVariants.id, { onDelete: 'cascade' }),
+  tick: bigint('tick', { mode: 'number' }).notNull(),
+  metricsSnapshot: jsonb('metrics_snapshot').$type<{
+    giniCoefficient?: number;
+    cooperationIndex?: number;
+    avgWealth?: number;
+    avgHealth?: number;
+    avgHunger?: number;
+    avgEnergy?: number;
+    aliveAgents?: number;
+    totalEvents?: number;
+    tradeCount?: number;
+    conflictCount?: number;
+    clusteringCoefficient?: number;
+  }>(),
+  agentStates: jsonb('agent_states').$type<Array<{
+    id: string;
+    llmType: string;
+    x: number;
+    y: number;
+    hunger: number;
+    energy: number;
+    health: number;
+    balance: number;
+    state: string;
+  }>>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('variant_snapshots_variant_idx').on(table.variantId),
+  index('variant_snapshots_tick_idx').on(table.tick),
+]);
+
+// =============================================================================
+// AGENT ROLES (Phase 2: Role Crystallization)
+// =============================================================================
+
+export const agentRoles = pgTable('agent_roles', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  role: varchar('role', { length: 50 }).notNull(), // gatherer, trader, worker, enforcer, predator, explorer
+  confidence: real('confidence').notNull().default(0), // 0-1 confidence score
+  detectedAtTick: bigint('detected_at_tick', { mode: 'number' }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('agent_roles_tenant_idx').on(table.tenantId),
+  uniqueIndex('agent_roles_agent_idx').on(table.agentId),
+  index('agent_roles_role_idx').on(table.role),
+]);
+
+// =============================================================================
+// RETALIATION CHAINS (Phase 2: Conflict Tracking)
+// =============================================================================
+
+export const retaliationChains = pgTable('retaliation_chains', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  chainId: uuid('chain_id').notNull(), // Groups related retaliations
+  attackerId: uuid('attacker_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  victimId: uuid('victim_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  actionType: varchar('action_type', { length: 50 }).notNull(), // harm, steal
+  depth: integer('depth').notNull().default(0), // 0 = initial attack, 1+ = retaliations
+  tick: bigint('tick', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('retaliation_chains_tenant_idx').on(table.tenantId),
+  index('retaliation_chains_chain_idx').on(table.chainId),
+  index('retaliation_chains_attacker_idx').on(table.attackerId),
+  index('retaliation_chains_victim_idx').on(table.victimId),
+]);
+
+// =============================================================================
+// EXTERNAL AGENTS (Phase 3: A2A Protocol)
+// =============================================================================
+
+export const externalAgents = pgTable('external_agents', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  apiKeyHash: varchar('api_key_hash', { length: 128 }).notNull().unique(),
+  name: varchar('name', { length: 255 }).notNull(),
+  endpoint: varchar('endpoint', { length: 500 }), // Webhook URL for push mode
+  ownerEmail: varchar('owner_email', { length: 255 }),
+  rateLimitPerTick: integer('rate_limit_per_tick').notNull().default(1),
+  rateLimitPerMinute: integer('rate_limit_per_minute').notNull().default(60),
+  isActive: boolean('is_active').notNull().default(true),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('external_agents_tenant_idx').on(table.tenantId),
+  uniqueIndex('external_agents_agent_idx').on(table.agentId),
+  index('external_agents_api_key_hash_idx').on(table.apiKeyHash),
+]);
+
+export const apiUsage = pgTable('api_usage', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  externalAgentId: uuid('external_agent_id').notNull().references(() => externalAgents.id, { onDelete: 'cascade' }),
+  tick: bigint('tick', { mode: 'number' }).notNull(),
+  actionCount: integer('action_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('api_usage_agent_tick_idx').on(table.externalAgentId, table.tick),
 ]);
 
 // =============================================================================
 // Type exports
 // =============================================================================
 
+// Tenants
+export type Tenant = typeof tenants.$inferSelect;
+export type NewTenant = typeof tenants.$inferInsert;
+export type TenantUsage = typeof tenantUsage.$inferSelect;
+export type NewTenantUsage = typeof tenantUsage.$inferInsert;
+export type TenantWorldState = typeof tenantWorldState.$inferSelect;
+export type NewTenantWorldState = typeof tenantWorldState.$inferInsert;
+
+// Core types
 export type WorldState = typeof worldState.$inferSelect;
 export type Agent = typeof agents.$inferSelect;
 export type NewAgent = typeof agents.$inferInsert;
@@ -391,6 +702,26 @@ export type AgentClaim = typeof agentClaims.$inferSelect;
 export type NewAgentClaim = typeof agentClaims.$inferInsert;
 export type LocationName = typeof locationNames.$inferSelect;
 export type NewLocationName = typeof locationNames.$inferInsert;
+
+// Experiments types (A/B Testing)
+export type Experiment = typeof experiments.$inferSelect;
+export type NewExperiment = typeof experiments.$inferInsert;
+export type ExperimentVariant = typeof experimentVariants.$inferSelect;
+export type NewExperimentVariant = typeof experimentVariants.$inferInsert;
+export type VariantSnapshot = typeof variantSnapshots.$inferSelect;
+export type NewVariantSnapshot = typeof variantSnapshots.$inferInsert;
+
+// Phase 2: Role and Conflict types
+export type AgentRole = typeof agentRoles.$inferSelect;
+export type NewAgentRole = typeof agentRoles.$inferInsert;
+export type RetaliationChain = typeof retaliationChains.$inferSelect;
+export type NewRetaliationChain = typeof retaliationChains.$inferInsert;
+
+// Phase 3: External Agents types
+export type ExternalAgent = typeof externalAgents.$inferSelect;
+export type NewExternalAgent = typeof externalAgents.$inferInsert;
+export type ApiUsage = typeof apiUsage.$inferSelect;
+export type NewApiUsage = typeof apiUsage.$inferInsert;
 
 // Backwards compatibility alias (for migration period)
 export type Location = Shelter;

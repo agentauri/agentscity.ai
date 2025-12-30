@@ -9,7 +9,7 @@ import type { ActionType, ActionParams } from '../actions/types';
 // LLM Types
 // =============================================================================
 
-export type LLMType = 'claude' | 'codex' | 'gemini' | 'deepseek' | 'qwen' | 'glm';
+export type LLMType = 'claude' | 'codex' | 'gemini' | 'deepseek' | 'qwen' | 'glm' | 'grok' | 'external';
 export type LLMMethod = 'cli' | 'api';
 
 // =============================================================================
@@ -224,10 +224,12 @@ export interface LLMCost {
 }
 
 export const LLM_COSTS: Record<LLMType, LLMCost> = {
-  claude: { inputPer1M: 3.00, outputPer1M: 15.00 },
-  codex: { inputPer1M: 0.25, outputPer1M: 1.00 },
-  gemini: { inputPer1M: 2.00, outputPer1M: 12.00 },
+  claude: { inputPer1M: 0.80, outputPer1M: 4.00 }, // Haiku pricing
+  codex: { inputPer1M: 0.15, outputPer1M: 0.60 }, // GPT-4o-mini pricing
+  gemini: { inputPer1M: 0.075, outputPer1M: 0.30 }, // Gemini Flash pricing
   deepseek: { inputPer1M: 0.28, outputPer1M: 0.42 },
   qwen: { inputPer1M: 0.46, outputPer1M: 1.84 },
   glm: { inputPer1M: 0.60, outputPer1M: 2.20 },
+  grok: { inputPer1M: 2.00, outputPer1M: 10.00 }, // Grok-2 pricing
+  external: { inputPer1M: 0, outputPer1M: 0 }, // External agents - no platform cost
 };

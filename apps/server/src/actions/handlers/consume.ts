@@ -9,6 +9,7 @@ import type { ActionIntent, ActionResult, ConsumeParams } from '../types';
 import type { Agent } from '../../db/schema';
 import { ITEM_EFFECTS } from './buy';
 import { getInventoryItem, removeFromInventory } from '../../db/queries/inventory';
+import { storeMemory } from '../../db/queries/memories';
 
 export async function handleConsume(
   intent: ActionIntent<ConsumeParams>,
@@ -49,6 +50,25 @@ export async function handleConsume(
   if (effects.health !== undefined) {
     changes.health = Math.min(100, agent.health + effects.health);
   }
+
+  // Build effect description
+  const effectParts: string[] = [];
+  if (effects.hunger) effectParts.push(`hunger +${effects.hunger}`);
+  if (effects.energy) effectParts.push(`energy +${effects.energy}`);
+  if (effects.health) effectParts.push(`health +${effects.health}`);
+  const effectDesc = effectParts.join(', ');
+
+  // Store memory of consuming
+  await storeMemory({
+    agentId: agent.id,
+    type: 'action',
+    content: `Consumed ${itemType} (${effectDesc}). Feeling better.`,
+    importance: 6,
+    emotionalValence: 0.5,
+    x: agent.x,
+    y: agent.y,
+    tick: intent.tick,
+  });
 
   // Success - return changes and events
   return {

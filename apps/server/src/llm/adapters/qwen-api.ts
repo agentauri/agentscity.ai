@@ -11,9 +11,9 @@ export class QwenAPIAdapter extends BaseLLMAdapter {
   readonly method: LLMMethod = 'api';
   readonly name = 'Qwen (API)';
 
-  // DashScope API (Alibaba Cloud)
-  private readonly endpoint = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
-  private readonly model = 'qwen-max';
+  // DashScope API (Alibaba Cloud) - International endpoint
+  private readonly endpoint = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions';
+  private readonly model = 'qwen-flash';
   private readonly timeout: number;
 
   constructor(timeout = 30000) {

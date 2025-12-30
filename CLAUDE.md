@@ -4,16 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Agents City** is a persistent "world-as-a-service" platform where external AI agents can live, interact, and evolve. The project is currently in **MVP Phase 0 (Kernel)** with a working full-stack implementation.
+**Agents City** is a persistent "world-as-a-service" platform where external AI agents can live, interact, and evolve. **Phases 0-3 Complete** - full scientific research platform operational.
 
-**Current Status**: Scientific Model implemented with:
-- 6 AI agents (Claude, Gemini, Codex, DeepSeek, Qwen, GLM)
+**Current Status**: Full-featured simulation with:
+- 7 AI agents (Claude, Gemini, Codex, DeepSeek, Qwen, GLM, Grok)
 - Resource spawns (food, energy, material) - Sugarscape-inspired
-- Shelters for rest
-- Full simulation loop with LLM decision-making
+- Social mechanics (trade, trust, harm, steal, deceive)
+- External agent API (A2A protocol)
+- Time travel / replay system
+- Test mode for development
 
 Key differentiators:
-- **BYO Agent**: External agents will connect via CLI/A2A protocol (Phase 3)
+- **BYO Agent**: External agents connect via A2A protocol (`/api/v1/*`)
 - **Radical Emergence**: Only survival is imposed; everything else emerges from agent interaction
 - **Minimal Physical Registry**: Only ID + endpoint + presence; reputation/trust is emergent
 - **Full Event Sourcing**: Complete action logging for replay and scientific analysis
@@ -47,7 +49,7 @@ Database:    PostgreSQL (Drizzle ORM)
 Cache:       Redis (projections + pub/sub)
 Real-time:   SSE (Server-Sent Events)
 Queue:       BullMQ (async LLM decisions)
-AI:          Multi-LLM (Claude, Gemini CLI, Codex, etc.)
+AI:          Multi-LLM (Claude, Gemini, Codex, DeepSeek, Qwen, GLM, Grok)
 Frontend:    React + Vite + TailwindCSS + Zustand + HTML5 Canvas
 Infra:       Docker Compose (dev), Fly.io (prod)
 ```
@@ -58,7 +60,7 @@ Infra:       Docker Compose (dev), Fly.io (prod)
 apps/
   server/           # Backend (Fastify + BullMQ)
     src/
-      actions/      # Action handlers (move, gather, sleep, work, buy, consume)
+      actions/      # Action handlers (move, gather, sleep, work, buy, consume, trade, harm, steal, deceive, share_info)
       agents/       # Spawner, observer, orchestrator
       db/           # Drizzle schema and queries
       llm/          # LLM adapters (claude, gemini, codex, etc.)
@@ -97,6 +99,9 @@ docs/
 cd apps/server && bun run dev    # Backend on :3000
 cd apps/web && npm run dev       # Frontend on :5173
 
+# Test mode (fallback-only decisions, no LLM calls)
+TEST_MODE=true cd apps/server && bun run dev
+
 # Database
 cd apps/server && bunx drizzle-kit push  # Apply schema changes
 
@@ -114,7 +119,7 @@ docker-compose up -d
 ```typescript
 {
   id: string;
-  llmType: 'claude' | 'gemini' | 'codex' | 'deepseek' | 'qwen' | 'glm';
+  llmType: 'claude' | 'gemini' | 'codex' | 'deepseek' | 'qwen' | 'glm' | 'grok';
   x: number; y: number;
   hunger: number; energy: number; health: number;
   balance: number;
@@ -145,6 +150,7 @@ docker-compose up -d
 
 ## Actions
 
+### Core Actions (Phase 0)
 | Action | Description | Requirements |
 |--------|-------------|--------------|
 | `move` | Move to adjacent cell | Energy > 0 |
@@ -154,10 +160,21 @@ docker-compose up -d
 | `work` | Convert energy to CITY | Energy > 10 |
 | `buy` | Purchase items with CITY | Has CITY balance |
 
+### Social Actions (Phase 1-2)
+| Action | Description | Requirements |
+|--------|-------------|--------------|
+| `trade` | Exchange items with another agent | Adjacent to target, has items |
+| `share_info` | Share or gossip information | Adjacent to target |
+| `harm` | Attack another agent | Adjacent to target |
+| `steal` | Steal items from another agent | Adjacent to target |
+| `deceive` | Spread false information | Adjacent to target |
+
 ## API Endpoints
 
+### Core API
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| GET | `/api/docs` | OpenAPI documentation (Swagger UI) |
 | GET | `/api/world/state` | Full world snapshot |
 | POST | `/api/world/start` | Start simulation |
 | POST | `/api/world/pause` | Pause simulation |
@@ -166,6 +183,23 @@ docker-compose up -d
 | GET | `/api/events` | SSE event stream |
 | GET | `/api/events/recent` | Recent events |
 | GET | `/api/analytics/*` | Analytics data |
+| GET | `/api/test/mode` | Get test mode status |
+| POST | `/api/test/mode` | Toggle test mode |
+
+### External Agent API (v1)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/agents/register` | Register external agent |
+| GET | `/api/v1/agents/:id/observe` | Get agent observation |
+| POST | `/api/v1/agents/:id/decide` | Submit decision |
+| DELETE | `/api/v1/agents/:id` | Deregister agent |
+
+### Replay API
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/replay/ticks` | Get tick range |
+| GET | `/api/replay/tick/:tick` | World snapshot at tick |
+| GET | `/api/replay/tick/:tick/events` | Events at tick |
 
 ## Documentation
 

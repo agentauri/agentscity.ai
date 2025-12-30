@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useWorldStore, useAliveAgents } from '../stores/world';
 import type { ConnectionStatus } from '../hooks/useSSE';
 
@@ -8,6 +9,15 @@ interface WorldStatsProps {
 export function WorldStats({ connectionStatus }: WorldStatsProps) {
   const tick = useWorldStore((s) => s.tick);
   const aliveAgents = useAliveAgents();
+  const [testMode, setTestMode] = useState(false);
+
+  // Fetch test mode status on mount
+  useEffect(() => {
+    fetch('/api/test/mode')
+      .then((res) => res.json())
+      .then((data) => setTestMode(data.testMode))
+      .catch(() => {});
+  }, []);
 
   const getStatusConfig = () => {
     switch (connectionStatus) {
@@ -37,9 +47,9 @@ export function WorldStats({ connectionStatus }: WorldStatsProps) {
   return (
     <>
       {/* Left side - Logo and stats */}
-      <div className="flex items-center gap-6">
-        {/* Logo */}
-        <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3 sm:gap-6">
+        {/* Logo - hidden on tablet, shown on desktop */}
+        <div className="hidden lg:flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-city-accent/20 border border-city-accent/30 flex items-center justify-center">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -68,18 +78,18 @@ export function WorldStats({ connectionStatus }: WorldStatsProps) {
           </h1>
         </div>
 
-        {/* Divider */}
-        <div className="w-px h-5 bg-city-border/50" />
+        {/* Divider - hidden on tablet */}
+        <div className="hidden lg:block w-px h-5 bg-city-border/50" />
 
-        {/* Stats */}
-        <div className="flex items-center gap-4 text-xs">
-          <div className="flex items-center gap-1.5">
+        {/* Stats - responsive sizing */}
+        <div className="flex items-center gap-2 sm:gap-4 text-[10px] sm:text-xs">
+          <div className="flex items-center gap-1 sm:gap-1.5">
             <span className="text-city-text-muted">Tick</span>
-            <span className="font-mono text-city-text bg-city-bg/50 px-1.5 py-0.5 rounded">
+            <span className="font-mono text-city-text bg-city-bg/50 px-1 sm:px-1.5 py-0.5 rounded">
               {tick.toLocaleString()}
             </span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 sm:gap-1.5">
             <span className="text-city-text-muted">Agents</span>
             <span className="font-mono text-city-accent font-medium">
               {aliveAgents.length}
@@ -88,10 +98,17 @@ export function WorldStats({ connectionStatus }: WorldStatsProps) {
         </div>
       </div>
 
-      {/* Right side - Connection status */}
-      <div className={`status-badge ${status.class}`}>
-        <span className={`w-1.5 h-1.5 rounded-full ${status.dotClass}`} />
-        {status.text}
+      {/* Right side - Test mode badge + Connection status */}
+      <div className="flex items-center gap-1.5 sm:gap-2">
+        {testMode && (
+          <span className="px-1.5 sm:px-2 py-0.5 rounded bg-red-500/20 text-red-400 text-[10px] sm:text-xs font-medium border border-red-500/30">
+            TEST
+          </span>
+        )}
+        <div className={`status-badge ${status.class} text-[10px] sm:text-xs px-1.5 sm:px-2.5`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${status.dotClass}`} />
+          <span className="hidden sm:inline">{status.text}</span>
+        </div>
       </div>
     </>
   );

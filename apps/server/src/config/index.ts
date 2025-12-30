@@ -17,6 +17,12 @@ function envString(key: string, defaultValue: string): string {
   return process.env[key] ?? defaultValue;
 }
 
+function envBool(key: string, defaultValue: boolean): boolean {
+  const value = process.env[key];
+  if (value === undefined) return defaultValue;
+  return value.toLowerCase() === 'true' || value === '1';
+}
+
 // =============================================================================
 // Configuration Object
 // =============================================================================
@@ -32,6 +38,8 @@ export const CONFIG = {
     gridSize: env('GRID_SIZE', 100),
     /** Agent visibility radius */
     visibilityRadius: env('VISIBILITY_RADIUS', 10),
+    /** Test mode: agents use fallback decisions instead of LLM calls */
+    testMode: envString('TEST_MODE', 'false') === 'true',
   },
 
   // ---------------------------------------------------------------------------
@@ -209,22 +217,31 @@ export const CONFIG = {
   // LLM
   // ---------------------------------------------------------------------------
   llm: {
-    /** Default timeout for LLM calls */
-    defaultTimeoutMs: env('LLM_TIMEOUT_MS', 30000),
+    /** Default timeout for LLM calls (45s to allow for CLI startup overhead) */
+    defaultTimeoutMs: env('LLM_TIMEOUT_MS', 45000),
     /** Maximum prompt length in characters */
     maxPromptLength: env('LLM_MAX_PROMPT', 8000),
+    /** LLM response cache configuration */
+    cache: {
+      /** Enable LLM response caching (default: true) */
+      enabled: envBool('LLM_CACHE_ENABLED', true),
+      /** Cache TTL in seconds (default: 300 = 5 minutes) */
+      ttlSeconds: env('LLM_CACHE_TTL_SECONDS', 300),
+      /** Redis key prefix for cache entries */
+      keyPrefix: envString('LLM_CACHE_PREFIX', 'llm-cache:'),
+    },
   },
 
   // ---------------------------------------------------------------------------
-  // Agent Spawning
+  // Agent Spawning (Scarcity Mode)
   // ---------------------------------------------------------------------------
   agent: {
-    /** Starting balance for new agents */
-    startingBalance: env('AGENT_STARTING_BALANCE', 100),
-    /** Starting hunger for new agents */
-    startingHunger: env('AGENT_STARTING_HUNGER', 80),
-    /** Starting energy for new agents */
-    startingEnergy: env('AGENT_STARTING_ENERGY', 80),
+    /** Starting balance for new agents (reduced for scarcity) */
+    startingBalance: env('AGENT_STARTING_BALANCE', 50),
+    /** Starting hunger for new agents (reduced for urgency) */
+    startingHunger: env('AGENT_STARTING_HUNGER', 60),
+    /** Starting energy for new agents (reduced for urgency) */
+    startingEnergy: env('AGENT_STARTING_ENERGY', 60),
     /** Starting health for new agents */
     startingHealth: env('AGENT_STARTING_HEALTH', 100),
   },
@@ -274,6 +291,35 @@ export const CONFIG = {
     port: env('PORT', 3000),
     host: envString('HOST', '0.0.0.0'),
   },
+
+  // ---------------------------------------------------------------------------
+  // Experiments (A/B Testing)
+  // ---------------------------------------------------------------------------
+  experiment: {
+    /** Snapshot interval in ticks (how often to capture metrics) */
+    snapshotInterval: env('EXPERIMENT_SNAPSHOT_INTERVAL', 10),
+    /** Default variant duration in ticks */
+    defaultDurationTicks: env('EXPERIMENT_DEFAULT_DURATION', 100),
+    /** Auto-pause between variants */
+    pauseBetweenVariants: env('EXPERIMENT_PAUSE_BETWEEN', 1) === 1,
+  },
+
+  // ---------------------------------------------------------------------------
+  // Telemetry (OpenTelemetry)
+  // ---------------------------------------------------------------------------
+  telemetry: {
+    /** Whether telemetry is enabled */
+    enabled: envString('OTEL_ENABLED', 'true') === 'true',
+    /** Service name for tracing */
+    serviceName: envString('OTEL_SERVICE_NAME', 'agentscity-server'),
+    /** OTLP endpoint URL (empty for console-only) */
+    otlpEndpoint: envString('OTEL_EXPORTER_OTLP_ENDPOINT', ''),
+    /** Whether to use console exporter (defaults to true in development) */
+    consoleExporter: envString('OTEL_CONSOLE_EXPORTER', '') === 'true' ||
+      envString('NODE_ENV', 'development') === 'development',
+    /** Sampling ratio (0.0 to 1.0) */
+    samplingRatio: env('OTEL_SAMPLING_RATIO', 1.0),
+  },
 } as const;
 
 // Type exports
@@ -281,3 +327,29 @@ export type Config = typeof CONFIG;
 export type ActionConfig = typeof CONFIG.actions;
 export type NeedsConfig = typeof CONFIG.needs;
 export type QueueConfig = typeof CONFIG.queue;
+export type LLMConfig = typeof CONFIG.llm;
+export type LLMCacheConfig = typeof CONFIG.llm.cache;
+export type ExperimentConfig = typeof CONFIG.experiment;
+export type TelemetryConfig = typeof CONFIG.telemetry;
+
+// =============================================================================
+// Runtime Test Mode
+// =============================================================================
+
+/** Runtime override for test mode (null = use config value) */
+let runtimeTestMode: boolean | null = null;
+
+/**
+ * Check if test mode is enabled (fallback-only decisions).
+ * Runtime toggle takes precedence over environment variable.
+ */
+export function isTestMode(): boolean {
+  return runtimeTestMode ?? CONFIG.simulation.testMode;
+}
+
+/**
+ * Set test mode at runtime (toggle without server restart).
+ */
+export function setTestMode(enabled: boolean): void {
+  runtimeTestMode = enabled;
+}

@@ -12,6 +12,7 @@ import type { ActionIntent, ActionResult, BuyParams } from '../types';
 import type { Agent } from '../../db/schema';
 import { addToInventory } from '../../db/queries/inventory';
 import { getSheltersAtPosition } from '../../db/queries/world';
+import { storeMemory } from '../../db/queries/memories';
 
 // Item prices (MVP: simple fixed prices)
 const ITEM_PRICES: Record<string, number> = {
@@ -65,6 +66,18 @@ export async function handleBuy(
 
   // Add items to inventory
   await addToInventory(agent.id, itemType, quantity);
+
+  // Store memory of buying
+  await storeMemory({
+    agentId: agent.id,
+    type: 'action',
+    content: `Bought ${quantity}x ${itemType} for ${totalCost} CITY at shelter (${agent.x}, ${agent.y}). Balance now ${agent.balance - totalCost} CITY.`,
+    importance: 4,
+    emotionalValence: 0.2,
+    x: agent.x,
+    y: agent.y,
+    tick: intent.tick,
+  });
 
   // Success - return changes and events
   return {

@@ -1,12 +1,23 @@
 /**
  * BullMQ Queue Setup
  * Handles async LLM decision jobs
+ * Includes OpenTelemetry tracing for job processing
  */
 
 import { Queue, Worker, Job, QueueEvents } from 'bullmq';
 import Redis from 'ioredis';
 import { getAdapter, type AgentObservation, type AgentDecision, type LLMType } from '../llm';
 import { getFallbackDecision } from '../llm/response-parser';
+import { isTestMode } from '../config';
+import {
+  startJobSpan,
+  markSpanSuccess,
+  markSpanError,
+  createTracedLogger,
+} from '../telemetry';
+
+// Traced logger for queue operations
+const logger = createTracedLogger('Queue');
 
 /**
  * Create fallback decision (scientific model - no location checks)
@@ -92,35 +103,80 @@ export function startWorker(): void {
       const startTime = Date.now();
       const { agentId, llmType, tick, observation } = job.data;
 
-      // Get adapter
-      const adapter = getAdapter(llmType);
-      if (!adapter) {
-        throw new Error(`Unknown LLM type: ${llmType}`);
-      }
+      // Start tracing span for this job
+      const span = startJobSpan('decision', job.id ?? 'unknown', {
+        attributes: {
+          'job.agent_id': agentId,
+          'job.llm_type': llmType,
+          'job.tick': tick,
+        },
+      });
 
-      // Check availability
-      const available = await adapter.isAvailable();
-      if (!available) {
-        console.warn(`[Queue] Adapter ${llmType} not available, using fallback`);
+      try {
+        // TEST MODE: Skip LLM call, use fallback immediately
+        if (isTestMode()) {
+          logger.info(`TEST MODE: fallback for ${agentId}`);
+          span.setAttribute('job.test_mode', true);
+          span.setAttribute('job.used_fallback', true);
+          markSpanSuccess(span);
+          span.end();
+          return {
+            agentId,
+            tick,
+            decision: createFallbackDecision(observation),
+            processingTimeMs: Date.now() - startTime,
+            usedFallback: true,
+          };
+        }
+
+        // Get adapter
+        const adapter = getAdapter(llmType);
+        if (!adapter) {
+          const error = new Error(`Unknown LLM type: ${llmType}`);
+          markSpanError(span, error);
+          span.end();
+          throw error;
+        }
+
+        // Check availability
+        const available = await adapter.isAvailable();
+        if (!available) {
+          logger.warn(`Adapter ${llmType} not available, using fallback`);
+          span.setAttribute('job.adapter_unavailable', true);
+          span.setAttribute('job.used_fallback', true);
+          markSpanSuccess(span);
+          span.end();
+          return {
+            agentId,
+            tick,
+            decision: createFallbackDecision(observation),
+            processingTimeMs: Date.now() - startTime,
+            usedFallback: true,
+          };
+        }
+
+        // Get decision
+        const decision = await adapter.decide(observation);
+
+        const processingTimeMs = Date.now() - startTime;
+        span.setAttribute('job.processing_time_ms', processingTimeMs);
+        span.setAttribute('job.decision_action', decision.action);
+        span.setAttribute('job.used_fallback', false);
+        markSpanSuccess(span);
+        span.end();
+
         return {
           agentId,
           tick,
-          decision: createFallbackDecision(observation),
-          processingTimeMs: Date.now() - startTime,
-          usedFallback: true,
+          decision,
+          processingTimeMs,
+          usedFallback: false,
         };
+      } catch (error) {
+        markSpanError(span, error instanceof Error ? error : String(error));
+        span.end();
+        throw error;
       }
-
-      // Get decision
-      const decision = await adapter.decide(observation);
-
-      return {
-        agentId,
-        tick,
-        decision,
-        processingTimeMs: Date.now() - startTime,
-        usedFallback: false,
-      };
     },
     {
       connection: redis,
@@ -129,10 +185,10 @@ export function startWorker(): void {
   );
 
   worker.on('failed', (job, err) => {
-    console.error(`[Queue] Job ${job?.id} failed:`, err.message);
+    logger.error(`Job ${job?.id} failed`, err);
   });
 
-  console.log('[Queue] Decision worker started');
+  logger.info('Decision worker started');
 }
 
 export function stopWorker(): Promise<void> {
@@ -209,8 +265,9 @@ export async function waitForDecisions(
 /**
  * Calculate job priority based on agent state
  * Lower number = higher priority
+ * @exported for testing
  */
-function getPriority(observation: AgentObservation): number {
+export function getPriority(observation: AgentObservation): number {
   // Urgent: low health or critical hunger
   if (observation.self.health < 20 || observation.self.hunger < 10) {
     return 1;

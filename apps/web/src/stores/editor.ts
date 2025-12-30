@@ -7,6 +7,7 @@ import { type TileDef, type TileCatalogEntry, GRASS_TILE, GRID_SIZE, createEmpty
 // =============================================================================
 
 const STORAGE_KEY = 'agentscity_grid';
+const VIEW_MODE_STORAGE_KEY = 'agentscity_view_mode';
 
 function loadGridFromStorage(): TileDef[][] | null {
   try {
@@ -41,15 +42,39 @@ function clearGridFromStorage(): void {
   }
 }
 
+function loadViewModeFromStorage(): ViewMode {
+  try {
+    const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    if (saved === '2d' || saved === 'isometric') {
+      return saved;
+    }
+  } catch (e) {
+    console.warn('[Editor] Failed to load view mode from localStorage:', e);
+  }
+  return '2d'; // Default to 2D view
+}
+
+function saveViewModeToStorage(viewMode: ViewMode): void {
+  try {
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+  } catch (e) {
+    console.warn('[Editor] Failed to save view mode to localStorage:', e);
+  }
+}
+
 // =============================================================================
 // Types
 // =============================================================================
 
-export type AppMode = 'editor' | 'simulation' | 'analytics';
+export type AppMode = 'editor' | 'simulation' | 'analytics' | 'replay';
+export type ViewMode = '2d' | 'isometric';
 
 export interface EditorState {
   // App mode
   mode: AppMode;
+
+  // View mode (2D or isometric)
+  viewMode: ViewMode;
 
   // Editor grid (20x20 array of TileDef)
   grid: TileDef[][];
@@ -65,6 +90,8 @@ export interface EditorState {
 
   // Actions
   setMode: (mode: AppMode) => void;
+  setViewMode: (viewMode: ViewMode) => void;
+  toggleViewMode: () => void;
   setSelectedTile: (tile: TileCatalogEntry | null) => void;
   placeTile: (gridX: number, gridY: number) => void;
   eraseTile: (gridX: number, gridY: number) => void;
@@ -84,10 +111,13 @@ const storedGrid = loadGridFromStorage();
 const initialGrid = storedGrid || createEmptyGrid();
 // If we loaded a grid from storage, use it as lastSavedGrid too
 const initialLastSavedGrid = storedGrid ? storedGrid.map(row => row.map(cell => ({ ...cell }))) : null;
+// Load initial view mode from localStorage
+const initialViewMode = loadViewModeFromStorage();
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   // Initial state
   mode: 'editor',
+  viewMode: initialViewMode,
   grid: initialGrid,
   selectedTile: null,
   isPaused: false,
@@ -95,6 +125,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   // Actions
   setMode: (mode) => set({ mode }),
+
+  setViewMode: (viewMode) => {
+    set({ viewMode });
+    saveViewModeToStorage(viewMode);
+  },
+
+  toggleViewMode: () => {
+    const { viewMode } = get();
+    const newViewMode = viewMode === '2d' ? 'isometric' : '2d';
+    set({ viewMode: newViewMode });
+    saveViewModeToStorage(newViewMode);
+  },
 
   setSelectedTile: (tile) => set({ selectedTile: tile }),
 
@@ -187,6 +229,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 export const useAppMode = () =>
   useEditorStore((state) => state.mode);
 
+export const useViewMode = () =>
+  useEditorStore((state) => state.viewMode);
+
 export const useEditorGrid = () =>
   useEditorStore(useShallow((state) => state.grid));
 
@@ -205,8 +250,17 @@ export const useIsSimulationMode = () =>
 export const useIsAnalyticsMode = () =>
   useEditorStore((state) => state.mode === 'analytics');
 
+export const useIsReplayMode = () =>
+  useEditorStore((state) => state.mode === 'replay');
+
 export const useHasLastSavedGrid = () =>
   useEditorStore((state) => state.lastSavedGrid !== null);
+
+export const useIs2DView = () =>
+  useEditorStore((state) => state.viewMode === '2d');
+
+export const useIsIsometricView = () =>
+  useEditorStore((state) => state.viewMode === 'isometric');
 
 // Combined selector for tile at specific position
 export const useTileAt = (gridX: number, gridY: number) =>

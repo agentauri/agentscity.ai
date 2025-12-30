@@ -6,6 +6,11 @@
  * - Resource spawns as colored squares (food=green, energy=yellow, material=brown)
  * - Shelters as gray squares
  * - Grid lines for reference
+ *
+ * Touch support:
+ * - Single finger drag to pan
+ * - Pinch to zoom
+ * - Tap to select agent
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -27,6 +32,27 @@ const COLORS = {
   shelter: '#6b7280', // Gray
 };
 
+// Touch point type (minimal interface we need)
+interface TouchPoint {
+  clientX: number;
+  clientY: number;
+}
+
+// Helper to get distance between two touch points
+function getTouchDistance(touch1: TouchPoint, touch2: TouchPoint): number {
+  const dx = touch1.clientX - touch2.clientX;
+  const dy = touch1.clientY - touch2.clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Helper to get center point between two touches
+function getTouchCenter(touch1: TouchPoint, touch2: TouchPoint): { x: number; y: number } {
+  return {
+    x: (touch1.clientX + touch2.clientX) / 2,
+    y: (touch1.clientY + touch2.clientY) / 2,
+  };
+}
+
 export function ScientificCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -37,6 +63,13 @@ export function ScientificCanvas() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [cameraStart, setCameraStart] = useState({ x: 0, y: 0 });
+
+  // Touch state for pinch zoom
+  const touchRef = useRef<{
+    lastDistance: number;
+    lastCenter: { x: number; y: number };
+    startZoom: number;
+  } | null>(null);
 
   // World state
   const agents = useAgents();
@@ -165,29 +198,42 @@ export function ScientificCanvas() {
 
     ctx.restore();
 
-    // Draw legend
+    // Draw legend (responsive positioning)
+    const isMobile = width < 500;
+    const legendX = 10;
+    const legendY = isMobile ? 12 : 20;
+    const lineHeight = isMobile ? 12 : 15;
+    const fontSize = isMobile ? 10 : 12;
+
     ctx.fillStyle = '#ffffff';
-    ctx.font = '12px monospace';
+    ctx.font = `${fontSize}px monospace`;
     ctx.textAlign = 'left';
-    ctx.fillText(`Tick: ${tick}`, 10, 20);
-    ctx.fillText(`Agents: ${agents.length}`, 10, 35);
-    ctx.fillText(`Resources: ${resourceSpawns.length}`, 10, 50);
+    ctx.fillText(`Tick: ${tick}`, legendX, legendY);
+    ctx.fillText(`Agents: ${agents.length}`, legendX, legendY + lineHeight);
 
-    // Resource type legend
-    ctx.fillStyle = COLORS.food;
-    ctx.fillRect(10, 60, 10, 10);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('Food', 25, 70);
+    // Resource type legend (hide on very small screens)
+    if (width >= 320) {
+      const resourceY = legendY + lineHeight * 2 + 5;
+      const resourceSize = isMobile ? 8 : 10;
+      const resourceSpacing = isMobile ? 50 : 60;
 
-    ctx.fillStyle = COLORS.energy;
-    ctx.fillRect(70, 60, 10, 10);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('Energy', 85, 70);
+      ctx.fillStyle = COLORS.food;
+      ctx.fillRect(legendX, resourceY, resourceSize, resourceSize);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('Food', legendX + resourceSize + 5, resourceY + resourceSize - 1);
 
-    ctx.fillStyle = COLORS.material;
-    ctx.fillRect(140, 60, 10, 10);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('Material', 155, 70);
+      ctx.fillStyle = COLORS.energy;
+      ctx.fillRect(legendX + resourceSpacing, resourceY, resourceSize, resourceSize);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('Energy', legendX + resourceSpacing + resourceSize + 5, resourceY + resourceSize - 1);
+
+      if (width >= 400) {
+        ctx.fillStyle = COLORS.material;
+        ctx.fillRect(legendX + resourceSpacing * 2 + 10, resourceY, resourceSize, resourceSize);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('Material', legendX + resourceSpacing * 2 + resourceSize + 15, resourceY + resourceSize - 1);
+      }
+    }
 
   }, [agents, resourceSpawns, shelters, tick, selectedAgentId, camera, zoom]);
 
@@ -212,7 +258,7 @@ export function ScientificCanvas() {
     setZoom((z) => Math.max(0.5, Math.min(3, z + delta)));
   }, []);
 
-  // Handle pan
+  // Handle mouse pan
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 0) {
       setIsDragging(true);
@@ -233,17 +279,98 @@ export function ScientificCanvas() {
     setIsDragging(false);
   }, []);
 
-  // Handle click to select agent
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    if (!canvasRef.current) return;
+  // Handle touch start
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
 
+    if (e.touches.length === 1) {
+      // Single finger - start drag
+      const touch = e.touches[0];
+      setIsDragging(true);
+      setDragStart({ x: touch.clientX, y: touch.clientY });
+      setCameraStart({ ...camera });
+      touchRef.current = null;
+    } else if (e.touches.length === 2) {
+      // Two fingers - start pinch zoom
+      const touch1: TouchPoint = { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+      const touch2: TouchPoint = { clientX: e.touches[1].clientX, clientY: e.touches[1].clientY };
+      const distance = getTouchDistance(touch1, touch2);
+      const center = getTouchCenter(touch1, touch2);
+      touchRef.current = {
+        lastDistance: distance,
+        lastCenter: center,
+        startZoom: zoom,
+      };
+      setIsDragging(false);
+    }
+  }, [camera, zoom]);
+
+  // Handle touch move
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+
+    if (e.touches.length === 1 && isDragging) {
+      // Single finger drag
+      const touch = e.touches[0];
+      setCamera({
+        x: cameraStart.x + (touch.clientX - dragStart.x),
+        y: cameraStart.y + (touch.clientY - dragStart.y),
+      });
+    } else if (e.touches.length === 2 && touchRef.current) {
+      // Pinch zoom
+      const touch1: TouchPoint = { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+      const touch2: TouchPoint = { clientX: e.touches[1].clientX, clientY: e.touches[1].clientY };
+      const distance = getTouchDistance(touch1, touch2);
+      const center = getTouchCenter(touch1, touch2);
+
+      // Calculate zoom change
+      const scale = distance / touchRef.current.lastDistance;
+      const newZoom = Math.max(0.5, Math.min(3, touchRef.current.startZoom * scale));
+      setZoom(newZoom);
+
+      // Pan to keep zoom centered
+      const dx = center.x - touchRef.current.lastCenter.x;
+      const dy = center.y - touchRef.current.lastCenter.y;
+      setCamera((c) => ({
+        x: c.x + dx,
+        y: c.y + dy,
+      }));
+
+      touchRef.current.lastCenter = center;
+    }
+  }, [isDragging, dragStart, cameraStart]);
+
+  // Handle touch end
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 0) {
+      setIsDragging(false);
+      touchRef.current = null;
+    } else if (e.touches.length === 1) {
+      // Transition from pinch to drag
+      const touch = e.touches[0];
+      setIsDragging(true);
+      setDragStart({ x: touch.clientX, y: touch.clientY });
+      setCameraStart({ ...camera });
+      touchRef.current = null;
+    }
+  }, [camera]);
+
+  // Convert screen coordinates to world coordinates
+  const screenToWorld = useCallback((screenX: number, screenY: number) => {
+    if (!canvasRef.current) return { x: 0, y: 0 };
     const rect = canvasRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    const mouseX = screenX - rect.left;
+    const mouseY = screenY - rect.top;
 
-    // Convert to world coordinates
     const worldX = (mouseX - canvasRef.current.width / 2 - camera.x) / zoom;
     const worldY = (mouseY - canvasRef.current.height / 2 - camera.y) / zoom;
+
+    return { x: worldX, y: worldY };
+  }, [camera, zoom]);
+
+  // Handle click to select agent
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    const { x: worldX, y: worldY } = screenToWorld(e.clientX, e.clientY);
 
     // Check if any agent was clicked
     for (const agent of agents) {
@@ -259,7 +386,53 @@ export function ScientificCanvas() {
 
     // Clicked empty space - deselect
     selectAgent(null);
-  }, [agents, camera, zoom, selectedAgentId, selectAgent]);
+  }, [agents, screenToWorld, selectedAgentId, selectAgent]);
+
+  // Handle tap to select agent (touch)
+  const handleTap = useCallback((e: React.TouchEvent) => {
+    // Only handle single tap (not part of a gesture)
+    if (e.changedTouches.length !== 1) return;
+
+    const touch = e.changedTouches[0];
+    const { x: worldX, y: worldY } = screenToWorld(touch.clientX, touch.clientY);
+
+    // Check if any agent was tapped
+    for (const agent of agents) {
+      const centerX = agent.x * TILE_SIZE + TILE_SIZE / 2;
+      const centerY = agent.y * TILE_SIZE + TILE_SIZE / 2;
+      const dist = Math.sqrt((worldX - centerX) ** 2 + (worldY - centerY) ** 2);
+
+      // Larger hit area for touch
+      if (dist < AGENT_RADIUS + 10) {
+        selectAgent(agent.id === selectedAgentId ? null : agent.id);
+        return;
+      }
+    }
+
+    // Tapped empty space - deselect
+    selectAgent(null);
+  }, [agents, screenToWorld, selectedAgentId, selectAgent]);
+
+  // Track if touch moved (to distinguish tap from drag)
+  const touchMovedRef = useRef(false);
+
+  const handleTouchStartWithTap = useCallback((e: React.TouchEvent) => {
+    touchMovedRef.current = false;
+    handleTouchStart(e);
+  }, [handleTouchStart]);
+
+  const handleTouchMoveWithTap = useCallback((e: React.TouchEvent) => {
+    touchMovedRef.current = true;
+    handleTouchMove(e);
+  }, [handleTouchMove]);
+
+  const handleTouchEndWithTap = useCallback((e: React.TouchEvent) => {
+    handleTouchEnd(e);
+    // If touch didn't move much, treat as tap
+    if (!touchMovedRef.current && e.changedTouches.length === 1) {
+      handleTap(e);
+    }
+  }, [handleTouchEnd, handleTap]);
 
   // Reset camera
   const resetCamera = useCallback(() => {
@@ -270,7 +443,7 @@ export function ScientificCanvas() {
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full bg-[#1a1a2e]"
+      className="relative w-full h-full bg-[#1a1a2e] touch-none"
       style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
     >
       <canvas
@@ -282,14 +455,18 @@ export function ScientificCanvas() {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onClick={handleClick}
+        onTouchStart={handleTouchStartWithTap}
+        onTouchMove={handleTouchMoveWithTap}
+        onTouchEnd={handleTouchEndWithTap}
+        onTouchCancel={handleTouchEnd}
       />
 
-      {/* Controls */}
-      <div className="absolute bottom-4 right-4 flex flex-col gap-2" style={{ zIndex: 10 }}>
+      {/* Controls - responsive positioning and sizing */}
+      <div className="absolute bottom-4 right-4 flex flex-col gap-2 md:bottom-4 md:right-4" style={{ zIndex: 10 }}>
         <button
           type="button"
           onClick={() => setZoom((z) => Math.min(3, z + 0.2))}
-          className="w-10 h-10 bg-city-surface border border-city-border rounded-lg text-white hover:bg-city-accent transition-colors font-bold text-lg shadow-lg"
+          className="w-10 h-10 md:w-10 md:h-10 bg-city-surface border border-city-border rounded-lg text-white hover:bg-city-accent active:bg-city-accent transition-colors font-bold text-lg shadow-lg"
           title="Zoom in"
         >
           +
@@ -297,7 +474,7 @@ export function ScientificCanvas() {
         <button
           type="button"
           onClick={() => setZoom((z) => Math.max(0.5, z - 0.2))}
-          className="w-10 h-10 bg-city-surface border border-city-border rounded-lg text-white hover:bg-city-accent transition-colors font-bold text-lg shadow-lg"
+          className="w-10 h-10 md:w-10 md:h-10 bg-city-surface border border-city-border rounded-lg text-white hover:bg-city-accent active:bg-city-accent transition-colors font-bold text-lg shadow-lg"
           title="Zoom out"
         >
           -
@@ -305,19 +482,21 @@ export function ScientificCanvas() {
         <button
           type="button"
           onClick={resetCamera}
-          className="w-10 h-10 bg-city-surface border border-city-border rounded-lg text-white hover:bg-city-accent transition-colors text-sm font-medium shadow-lg"
+          className="w-10 h-10 md:w-10 md:h-10 bg-city-surface border border-city-border rounded-lg text-white hover:bg-city-accent active:bg-city-accent transition-colors text-sm font-medium shadow-lg"
           title="Reset camera"
         >
           R
         </button>
       </div>
 
-      {/* Help text */}
+      {/* Help text - responsive, hide on very small screens */}
       <div
-        className="absolute bottom-4 left-4 text-xs text-gray-400 bg-black/40 px-3 py-2 rounded-lg"
+        className="absolute bottom-4 left-4 text-[10px] sm:text-xs text-gray-400 bg-black/40 px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg hidden sm:block"
         style={{ zIndex: 10 }}
       >
-        Drag to pan | Scroll to zoom | Click agent to select
+        <span className="hidden md:inline">Drag to pan | Scroll to zoom | </span>
+        <span className="md:hidden">Pinch to zoom | </span>
+        <span className="hidden sm:inline">Tap agent to select</span>
       </div>
     </div>
   );

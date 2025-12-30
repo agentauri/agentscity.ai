@@ -1,0 +1,65 @@
+# Dependencies (will be installed in Docker)
+node_modules
+**/node_modules
+
+# Build outputs
+dist
+**/dist
+*.tsbuildinfo
+
+# Development files
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+
+# IDE and editor
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Testing
+coverage
+.nyc_output
+**/__tests__
+**/*.test.ts
+**/*.spec.ts
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*
+.docker
+
+# Documentation
+*.md
+docs
+
+# Fly.io local
+.fly
+
+# Frontend (not needed for server build)
+apps/web/node_modules
+apps/web/dist
+
+# Drizzle migrations (run separately)
+apps/server/drizzle
+
+# GitHub
+.github

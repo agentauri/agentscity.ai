@@ -1627,6 +1627,188 @@ export async function getEmergenceDetectionMetrics(): Promise<EmergenceDetection
 }
 
 // =============================================================================
+// Phase 2: Global Reputation Aggregation
+// =============================================================================
+
+export interface GlobalReputation {
+  agentId: string;
+  llmType: string;
+  aggregateScore: number; // -100 to +100
+  directKnowers: number;
+  referralKnowers: number;
+  sentimentDistribution: {
+    positive: number;
+    neutral: number;
+    negative: number;
+  };
+  averageReferralDepth: number;
+}
+
+/**
+ * Get global reputation for an agent from the referral network
+ * Aggregates all knowledge about an agent, weighted by referral depth
+ */
+export async function getGlobalReputation(agentId: string): Promise<GlobalReputation | null> {
+  // Get agent info
+  const agentInfo = await db
+    .select({ llmType: agents.llmType })
+    .from(agents)
+    .where(eq(agents.id, agentId))
+    .limit(1);
+
+  if (!agentInfo[0]) return null;
+
+  // Get all knowledge about this agent
+  const knowledgeData = await db.execute<{
+    knower_count: number;
+    direct_count: number;
+    referral_count: number;
+    avg_depth: number;
+    positive_count: number;
+    neutral_count: number;
+    negative_count: number;
+    weighted_sentiment: number;
+  }>(sql`
+    WITH knowledge_items AS (
+      SELECT
+        ak.agent_id as knower_id,
+        ak.discovery_type,
+        ak.referral_depth,
+        COALESCE(
+          (ak.shared_info->>'sentiment')::numeric,
+          CASE
+            WHEN ar.trust_score > 20 THEN 50
+            WHEN ar.trust_score < -20 THEN -50
+            ELSE 0
+          END
+        ) as sentiment,
+        -- Weight by referral depth: direct = 1.0, each level = 0.8x
+        POWER(0.8, COALESCE(ak.referral_depth, 0)) as depth_weight
+      FROM agent_knowledge ak
+      LEFT JOIN agent_relationships ar
+        ON ar.agent_id = ak.agent_id
+        AND ar.other_agent_id = ak.known_agent_id
+      WHERE ak.known_agent_id = ${agentId}
+    )
+    SELECT
+      COUNT(*) as knower_count,
+      COUNT(*) FILTER (WHERE discovery_type = 'direct') as direct_count,
+      COUNT(*) FILTER (WHERE discovery_type = 'referral') as referral_count,
+      COALESCE(AVG(referral_depth), 0) as avg_depth,
+      COUNT(*) FILTER (WHERE sentiment > 20) as positive_count,
+      COUNT(*) FILTER (WHERE sentiment >= -20 AND sentiment <= 20) as neutral_count,
+      COUNT(*) FILTER (WHERE sentiment < -20) as negative_count,
+      COALESCE(SUM(sentiment * depth_weight) / NULLIF(SUM(depth_weight), 0), 0) as weighted_sentiment
+    FROM knowledge_items
+  `);
+
+  const rows = Array.isArray(knowledgeData) ? knowledgeData : (knowledgeData as any).rows || [];
+  const data = rows[0];
+
+  if (!data || Number(data.knower_count) === 0) {
+    return {
+      agentId,
+      llmType: agentInfo[0].llmType,
+      aggregateScore: 0,
+      directKnowers: 0,
+      referralKnowers: 0,
+      sentimentDistribution: { positive: 0, neutral: 0, negative: 0 },
+      averageReferralDepth: 0,
+    };
+  }
+
+  return {
+    agentId,
+    llmType: agentInfo[0].llmType,
+    aggregateScore: Math.max(-100, Math.min(100, Number(data.weighted_sentiment) || 0)),
+    directKnowers: Number(data.direct_count) || 0,
+    referralKnowers: Number(data.referral_count) || 0,
+    sentimentDistribution: {
+      positive: Number(data.positive_count) || 0,
+      neutral: Number(data.neutral_count) || 0,
+      negative: Number(data.negative_count) || 0,
+    },
+    averageReferralDepth: Number(data.avg_depth) || 0,
+  };
+}
+
+/**
+ * Get global reputation for all agents
+ */
+export async function getAllGlobalReputations(): Promise<GlobalReputation[]> {
+  const allAgents = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(sql`${agents.state} != 'dead'`);
+
+  const reputations: GlobalReputation[] = [];
+
+  for (const agent of allAgents) {
+    const rep = await getGlobalReputation(agent.id);
+    if (rep) {
+      reputations.push(rep);
+    }
+  }
+
+  return reputations;
+}
+
+/**
+ * Get reputation summary statistics
+ */
+export async function getReputationSummary(): Promise<{
+  avgReputation: number;
+  reputationDistribution: {
+    veryPositive: number; // > 50
+    positive: number; // 20 to 50
+    neutral: number; // -20 to 20
+    negative: number; // -50 to -20
+    veryNegative: number; // < -50
+  };
+  mostReputable: { agentId: string; llmType: string; score: number }[];
+  leastReputable: { agentId: string; llmType: string; score: number }[];
+}> {
+  const allReps = await getAllGlobalReputations();
+
+  if (allReps.length === 0) {
+    return {
+      avgReputation: 0,
+      reputationDistribution: { veryPositive: 0, positive: 0, neutral: 0, negative: 0, veryNegative: 0 },
+      mostReputable: [],
+      leastReputable: [],
+    };
+  }
+
+  const scores = allReps.map(r => r.aggregateScore);
+  const avgReputation = scores.reduce((a, b) => a + b, 0) / scores.length;
+
+  const distribution = {
+    veryPositive: allReps.filter(r => r.aggregateScore > 50).length,
+    positive: allReps.filter(r => r.aggregateScore > 20 && r.aggregateScore <= 50).length,
+    neutral: allReps.filter(r => r.aggregateScore >= -20 && r.aggregateScore <= 20).length,
+    negative: allReps.filter(r => r.aggregateScore < -20 && r.aggregateScore >= -50).length,
+    veryNegative: allReps.filter(r => r.aggregateScore < -50).length,
+  };
+
+  const sortedByScore = [...allReps].sort((a, b) => b.aggregateScore - a.aggregateScore);
+
+  return {
+    avgReputation,
+    reputationDistribution: distribution,
+    mostReputable: sortedByScore.slice(0, 3).map(r => ({
+      agentId: r.agentId,
+      llmType: r.llmType,
+      score: r.aggregateScore,
+    })),
+    leastReputable: sortedByScore.slice(-3).reverse().map(r => ({
+      agentId: r.agentId,
+      llmType: r.llmType,
+      score: r.aggregateScore,
+    })),
+  };
+}
+
+// =============================================================================
 // Combined Snapshot
 // =============================================================================
 

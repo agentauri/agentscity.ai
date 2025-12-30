@@ -16,6 +16,7 @@ import type { ActionIntent, ActionResult, HarmParams } from '../types';
 import type { Agent } from '../../db/schema';
 import { getAgentById, updateAgent, getAliveAgents } from '../../db/queries/agents';
 import { updateRelationshipTrust, storeMemory } from '../../db/queries/memories';
+import { checkIsRetaliation, recordRetaliationChain } from '../../db/queries/roles';
 import { getDistance, getVisibleAgents } from '../../world/grid';
 import { CONFIG } from '../../config';
 
@@ -98,6 +99,22 @@ export async function handleHarm(
       state: targetDied ? 'dead' : targetAgent.state,
       diedAt: targetDied ? new Date() : undefined,
     });
+
+    // Track retaliation chain
+    const retaliationCheck = await checkIsRetaliation(agent.id, targetAgentId);
+    if (retaliationCheck.isRetaliation) {
+      await recordRetaliationChain(
+        agent.id,
+        targetAgentId,
+        'harm',
+        intent.tick,
+        retaliationCheck.existingChainId,
+        retaliationCheck.depth
+      );
+    } else {
+      // Start a new potential chain (depth 0 = initial attack)
+      await recordRetaliationChain(agent.id, targetAgentId, 'harm', intent.tick, null, 0);
+    }
 
     // Update victim's trust toward attacker
     await updateRelationshipTrust(

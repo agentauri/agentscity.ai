@@ -13,6 +13,7 @@ import type { ActionIntent, ActionResult } from '../types';
 import type { Agent } from '../../db/schema';
 import { getResourceSpawnsAtPosition, harvestResource } from '../../db/queries/world';
 import { addToInventory } from '../../db/queries/inventory';
+import { storeMemory } from '../../db/queries/memories';
 
 // Gather configuration
 const CONFIG = {
@@ -107,6 +108,18 @@ export async function handleGather(
   // Calculate actual energy cost (based on what was actually gathered)
   const actualEnergyCost = CONFIG.energyCostPerUnit * actualGathered;
   const newEnergy = agent.energy - actualEnergyCost;
+
+  // Store memory of gathering
+  await storeMemory({
+    agentId: agent.id,
+    type: 'action',
+    content: `Gathered ${actualGathered}x ${targetSpawn.resourceType} at (${agent.x}, ${agent.y}). Spawn has ${targetSpawn.currentAmount - actualGathered} remaining.`,
+    importance: 5,
+    emotionalValence: 0.4,
+    x: agent.x,
+    y: agent.y,
+    tick: intent.tick,
+  });
 
   return {
     success: true,

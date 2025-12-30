@@ -32,8 +32,9 @@ export class CodexCLIAdapter extends BaseLLMAdapter {
   }
 
   protected async callLLM(prompt: string): Promise<string> {
-    // Codex exec expects the prompt as an argument
-    const proc = Bun.spawn(['codex', 'exec', prompt], {
+    // Codex exec reads from stdin when '-' is passed as the prompt argument
+    const proc = Bun.spawn(['codex', 'exec', '-'], {
+      stdin: new TextEncoder().encode(prompt),
       stdout: 'pipe',
       stderr: 'pipe',
     });
