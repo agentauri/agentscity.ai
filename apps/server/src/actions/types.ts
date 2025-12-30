@@ -25,7 +25,14 @@ export type ActionType =
   | 'steal'
   | 'deceive'
   // Phase 2: Social Discovery
-  | 'share_info';
+  | 'share_info'
+  // Phase 4: Verifiable Credentials (§34)
+  | 'issue_credential'
+  | 'revoke_credential'
+  // Phase 4: Gossip Protocol (§35)
+  | 'spread_gossip'
+  // Phase 4: Reproduction (§36)
+  | 'spawn_offspring';
 
 // =============================================================================
 // Action Parameters
@@ -114,6 +121,40 @@ export interface NameLocationParams {
   y?: number;
 }
 
+// Phase 4: Verifiable Credentials Parameters (§34)
+
+export interface IssueCredentialParams {
+  subjectAgentId: string; // Agent receiving the credential
+  claimType: 'skill' | 'experience' | 'membership' | 'character' | 'custom';
+  description: string; // "Can cook Italian food", "Member of Builders Guild"
+  evidence?: string; // "Worked at Restaurant X for 100 ticks"
+  level?: number; // 1-10 proficiency (optional)
+  expiresAtTick?: number; // Optional expiration
+}
+
+export interface RevokeCredentialParams {
+  credentialId: string; // ID of credential to revoke
+}
+
+// Phase 4: Gossip Protocol Parameters (§35)
+
+export interface SpreadGossipParams {
+  targetAgentId: string; // Who to tell
+  subjectAgentId: string; // Who gossip is about
+  topic: 'skill' | 'behavior' | 'transaction' | 'warning' | 'recommendation';
+  claim: string; // The gossip content
+  sentiment: number; // -100 to +100
+  evidenceEventId?: number; // Link to verifiable event
+}
+
+// Phase 4: Reproduction Parameters (§36)
+
+export interface SpawnOffspringParams {
+  partnerId?: string; // Optional second parent
+  inheritSystemPrompt?: boolean; // Default: true
+  mutationIntensity?: number; // 0.0 (no mutations) to 1.0 (heavy mutations)
+}
+
 export type ActionParams =
   | MoveParams
   | BuyParams
@@ -127,7 +168,12 @@ export type ActionParams =
   | HarmParams
   | StealParams
   | DeceiveParams
-  | ShareInfoParams;
+  | ShareInfoParams
+  // Phase 4
+  | IssueCredentialParams
+  | RevokeCredentialParams
+  | SpreadGossipParams
+  | SpawnOffspringParams;
 
 // =============================================================================
 // Action Intent

@@ -34,6 +34,27 @@ import {
   getGovernanceMetrics,
 } from './db/queries/analytics';
 import {
+  getCredentialsIssuedBy,
+  getCredentialsReceivedBy,
+  getActiveCredentials,
+} from './db/queries/credentials';
+import {
+  getGossipAbout,
+  getGossipSpreadBy,
+  getReputationSummary,
+} from './db/queries/gossip';
+import {
+  getLineageTree,
+  getGenerationStats,
+  getReproductionHistory,
+} from './db/queries/reproduction';
+import {
+  recordLLMMetric,
+  getAgentMetrics,
+  getModelComparison,
+  getSystemHealth,
+} from './db/queries/llm-metrics';
+import {
   createExperiment,
   getExperimentWithVariants,
   listExperiments,
@@ -258,12 +279,14 @@ server.addSchema({
   $id: 'Event',
   type: 'object',
   properties: {
-    id: { type: 'string' },
+    id: { oneOf: [{ type: 'string' }, { type: 'number' }] },
     type: { type: 'string' },
+    eventType: { type: 'string' },
     tick: { type: 'number' },
     timestamp: { type: 'number' },
+    createdAt: { type: 'string', format: 'date-time' },
     agentId: { type: 'string', nullable: true },
-    payload: { type: 'object' },
+    payload: { type: 'object', additionalProperties: true },
   },
 });
 
@@ -797,12 +820,9 @@ server.get('/api/analytics/survival', {
       200: {
         type: 'object',
         properties: {
-          aliveCount: { type: 'number' },
-          deadCount: { type: 'number' },
-          avgHealth: { type: 'number' },
-          avgHunger: { type: 'number' },
-          avgEnergy: { type: 'number' },
-          byLlmType: { type: 'object' },
+          byLlmType: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          overall: { type: 'object', additionalProperties: true },
+          deathCauses: { type: 'object', additionalProperties: true },
         },
       },
     },
@@ -820,10 +840,10 @@ server.get('/api/analytics/economy', {
       200: {
         type: 'object',
         properties: {
-          totalWealth: { type: 'number' },
-          avgBalance: { type: 'number' },
+          moneySupply: { type: 'number' },
           giniCoefficient: { type: 'number' },
-          wealthDistribution: { type: 'object' },
+          balanceDistribution: { type: 'object', additionalProperties: true },
+          byLlmType: { type: 'array', items: { type: 'object', additionalProperties: true } },
         },
       },
     },
@@ -841,9 +861,8 @@ server.get('/api/analytics/behavior', {
       200: {
         type: 'object',
         properties: {
-          actionCounts: { type: 'object' },
-          clusteringCoefficient: { type: 'number' },
-          cooperationIndex: { type: 'number' },
+          actionFrequency: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          byLlmType: { type: 'array', items: { type: 'object', additionalProperties: true } },
         },
       },
     },
@@ -867,7 +886,9 @@ server.get<{ Querystring: { limit?: string } }>('/api/analytics/temporal', {
       200: {
         type: 'object',
         properties: {
-          timeline: { type: 'array' },
+          tickDurations: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          eventsByTick: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          currentTick: { type: 'number' },
         },
       },
     },
@@ -965,6 +986,355 @@ server.get('/api/analytics/governance', {
   },
 }, async () => {
   return getGovernanceMetrics();
+});
+
+// =============================================================================
+// Phase 4: Credentials, Gossip, Lineage, LLM Metrics
+// =============================================================================
+
+// Get credentials issued by an agent
+server.get<{ Params: { agentId: string } }>('/api/analytics/credentials/issued/:agentId', {
+  schema: {
+    description: 'Get verifiable credentials issued by an agent',
+    tags: ['Analytics', 'Phase4'],
+    params: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', format: 'uuid', description: 'Agent ID' },
+      },
+      required: ['agentId'],
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          credentials: { type: 'array', items: { type: 'object' } },
+        },
+      },
+    },
+  },
+}, async (request) => {
+  const credentials = await getCredentialsIssuedBy(request.params.agentId);
+  return { credentials };
+});
+
+// Get credentials received by an agent
+server.get<{ Params: { agentId: string } }>('/api/analytics/credentials/received/:agentId', {
+  schema: {
+    description: 'Get verifiable credentials received by an agent',
+    tags: ['Analytics', 'Phase4'],
+    params: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', format: 'uuid', description: 'Agent ID' },
+      },
+      required: ['agentId'],
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          credentials: { type: 'array', items: { type: 'object' } },
+        },
+      },
+    },
+  },
+}, async (request) => {
+  const credentials = await getCredentialsReceivedBy(request.params.agentId);
+  return { credentials };
+});
+
+// Get active credentials for an agent
+server.get<{ Params: { agentId: string }; Querystring: { tick?: string } }>('/api/analytics/credentials/active/:agentId', {
+  schema: {
+    description: 'Get active (non-revoked, non-expired) credentials for an agent',
+    tags: ['Analytics', 'Phase4'],
+    params: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', format: 'uuid', description: 'Agent ID' },
+      },
+      required: ['agentId'],
+    },
+    querystring: {
+      type: 'object',
+      properties: {
+        tick: { type: 'string', description: 'Current tick for expiration check' },
+      },
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          credentials: { type: 'array', items: { type: 'object' } },
+        },
+      },
+    },
+  },
+}, async (request) => {
+  const tick = request.query.tick ? parseInt(request.query.tick) : undefined;
+  const credentials = await getActiveCredentials(request.params.agentId, tick);
+  return { credentials };
+});
+
+// Get gossip about an agent
+server.get<{ Params: { agentId: string } }>('/api/analytics/gossip/about/:agentId', {
+  schema: {
+    description: 'Get gossip events about an agent (what others say about them)',
+    tags: ['Analytics', 'Phase4'],
+    params: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', format: 'uuid', description: 'Agent ID' },
+      },
+      required: ['agentId'],
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          gossip: { type: 'array', items: { type: 'object' } },
+        },
+      },
+    },
+  },
+}, async (request) => {
+  const gossip = await getGossipAbout(request.params.agentId);
+  return { gossip };
+});
+
+// Get gossip spread by an agent
+server.get<{ Params: { agentId: string } }>('/api/analytics/gossip/spread/:agentId', {
+  schema: {
+    description: 'Get gossip events spread by an agent (what they say about others)',
+    tags: ['Analytics', 'Phase4'],
+    params: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', format: 'uuid', description: 'Agent ID' },
+      },
+      required: ['agentId'],
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          gossip: { type: 'array', items: { type: 'object' } },
+        },
+      },
+    },
+  },
+}, async (request) => {
+  const gossip = await getGossipSpreadBy(request.params.agentId);
+  return { gossip };
+});
+
+// Get reputation summary for an agent
+server.get<{ Params: { agentId: string } }>('/api/analytics/reputation/:agentId', {
+  schema: {
+    description: 'Get aggregated reputation summary for an agent based on gossip',
+    tags: ['Analytics', 'Phase4'],
+    params: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', format: 'uuid', description: 'Agent ID' },
+      },
+      required: ['agentId'],
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          totalGossipEvents: { type: 'number' },
+          averageSentiment: { type: 'number' },
+          topicBreakdown: { type: 'object' },
+          recentTrend: { type: 'string', enum: ['improving', 'stable', 'declining'] },
+        },
+      },
+    },
+  },
+}, async (request) => {
+  return getReputationSummary(request.params.agentId);
+});
+
+// Get lineage tree for an agent
+server.get<{ Params: { agentId: string }; Querystring: { depth?: string } }>('/api/analytics/lineage/:agentId', {
+  schema: {
+    description: 'Get family tree (parents, children, siblings) for an agent',
+    tags: ['Analytics', 'Phase4'],
+    params: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', format: 'uuid', description: 'Agent ID' },
+      },
+      required: ['agentId'],
+    },
+    querystring: {
+      type: 'object',
+      properties: {
+        depth: { type: 'string', description: 'Max tree depth (default: 3)' },
+      },
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          agent: { type: 'object', nullable: true },
+          parents: { type: 'array', items: { type: 'object' } },
+          children: { type: 'array', items: { type: 'object' } },
+          siblings: { type: 'array', items: { type: 'object' } },
+        },
+      },
+    },
+  },
+}, async (request) => {
+  const depth = request.query.depth ? parseInt(request.query.depth) : 3;
+  return getLineageTree(request.params.agentId, depth);
+});
+
+// Get generation statistics
+server.get('/api/analytics/generations', {
+  schema: {
+    description: 'Get population statistics by generation',
+    tags: ['Analytics', 'Phase4'],
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          generations: { type: 'object', additionalProperties: { type: 'number' } },
+          totalAgents: { type: 'number' },
+          maxGeneration: { type: 'number' },
+        },
+      },
+    },
+  },
+}, async () => {
+  const stats = await getGenerationStats();
+  // Convert Map to object for JSON serialization
+  const generations: Record<number, number> = {};
+  stats.generations.forEach((count, gen) => {
+    generations[gen] = count;
+  });
+  return {
+    generations,
+    totalAgents: stats.totalAgents,
+    maxGeneration: stats.maxGeneration,
+  };
+});
+
+// Get reproduction history for an agent
+server.get<{ Params: { agentId: string } }>('/api/analytics/reproduction/:agentId', {
+  schema: {
+    description: 'Get reproduction history for an agent',
+    tags: ['Analytics', 'Phase4'],
+    params: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', format: 'uuid', description: 'Agent ID' },
+      },
+      required: ['agentId'],
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          reproductions: { type: 'array', items: { type: 'object' } },
+        },
+      },
+    },
+  },
+}, async (request) => {
+  const reproductions = await getReproductionHistory(request.params.agentId);
+  return { reproductions };
+});
+
+// Get LLM metrics for an agent
+server.get<{ Params: { agentId: string }; Querystring: { limit?: string } }>('/api/analytics/llm-metrics/:agentId', {
+  schema: {
+    description: 'Get LLM performance metrics for an agent',
+    tags: ['Analytics', 'Phase4'],
+    params: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', format: 'uuid', description: 'Agent ID' },
+      },
+      required: ['agentId'],
+    },
+    querystring: {
+      type: 'object',
+      properties: {
+        limit: { type: 'string', description: 'Max records to return (default: 100)' },
+      },
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          metrics: { type: 'array', items: { type: 'object' } },
+        },
+      },
+    },
+  },
+}, async (request) => {
+  const limit = request.query.limit ? parseInt(request.query.limit) : 100;
+  const metrics = await getAgentMetrics(request.params.agentId, limit);
+  return { metrics };
+});
+
+// Get LLM model comparison
+server.get('/api/analytics/llm-comparison', {
+  schema: {
+    description: 'Compare LLM performance across all models',
+    tags: ['Analytics', 'Phase4'],
+    response: {
+      200: {
+        type: 'object',
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            avgLatencyMs: { type: 'number' },
+            avgInputTokens: { type: 'number' },
+            avgOutputTokens: { type: 'number' },
+            totalCostUsd: { type: 'number' },
+            successRate: { type: 'number' },
+            fallbackRate: { type: 'number' },
+            totalCalls: { type: 'number' },
+          },
+        },
+      },
+    },
+  },
+}, async () => {
+  const comparison = await getModelComparison();
+  // Convert Map to object for JSON serialization
+  const result: Record<string, { avgLatency: number; successRate: number; avgCost: number; totalCalls: number }> = {};
+  comparison.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
+});
+
+// Get system health metrics
+server.get('/api/analytics/system-health', {
+  schema: {
+    description: 'Get overall system health based on LLM metrics',
+    tags: ['Analytics', 'Phase4'],
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          overallSuccessRate: { type: 'number' },
+          overallFallbackRate: { type: 'number' },
+          avgLatencyMs: { type: 'number' },
+          totalCalls: { type: 'number' },
+          totalCostUsd: { type: 'number' },
+          status: { type: 'string', enum: ['healthy', 'degraded', 'critical'] },
+        },
+      },
+    },
+  },
+}, async () => {
+  return getSystemHealth();
 });
 
 // =============================================================================
@@ -1853,20 +2223,16 @@ server.get('/api/replay/ticks', {
       200: {
         type: 'object',
         properties: {
-          range: {
-            type: 'object',
-            properties: {
-              min: { type: 'number' },
-              max: { type: 'number' },
-            },
-          },
+          minTick: { type: 'number' },
+          maxTick: { type: 'number' },
+          currentTick: { type: 'number' },
+          totalEvents: { type: 'number' },
         },
       },
     },
   },
 }, async () => {
-  const range = await getTickRange();
-  return { range };
+  return await getTickRange();
 });
 
 // Get events at a specific tick

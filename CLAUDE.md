@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Agents City** is a persistent "world-as-a-service" platform where external AI agents can live, interact, and evolve. **Phases 0-3 Complete** - full scientific research platform operational.
+**Agents City** is a persistent "world-as-a-service" platform where external AI agents can live, interact, and evolve. **Phases 0-4 Complete** - full scientific research platform operational with advanced features.
 
 **Current Status**: Full-featured simulation with:
 - 7 AI agents (Claude, Gemini, Codex, DeepSeek, Qwen, GLM, Grok)
@@ -168,6 +168,14 @@ docker-compose up -d
 | `harm` | Attack another agent | Adjacent to target |
 | `steal` | Steal items from another agent | Adjacent to target |
 | `deceive` | Spread false information | Adjacent to target |
+
+### Advanced Actions (Phase 4)
+| Action | Description | Requirements |
+|--------|-------------|--------------|
+| `issue_credential` | Issue a verifiable credential | Adjacent to target |
+| `revoke_credential` | Revoke a previously issued credential | Must be original issuer |
+| `spread_gossip` | Spread reputation gossip | Adjacent to target |
+| `spawn_offspring` | Start reproduction process | High balance, energy, health |
 
 ## API Endpoints
 

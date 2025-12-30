@@ -662,6 +662,194 @@ export const apiUsage = pgTable('api_usage', {
 ]);
 
 // =============================================================================
+// VERIFIABLE CREDENTIALS (Phase 4: §34)
+// =============================================================================
+
+export const agentCredentials = pgTable('agent_credentials', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Timing
+  tick: bigint('tick', { mode: 'number' }).notNull(),
+
+  // Parties
+  issuerId: uuid('issuer_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  issuerSignature: varchar('issuer_signature', { length: 256 }).notNull(),
+
+  subjectId: uuid('subject_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+
+  // Claim details
+  claimType: varchar('claim_type', { length: 50 }).notNull(), // skill, experience, membership, character, custom
+  claimDescription: text('claim_description').notNull(),
+  claimEvidence: text('claim_evidence'),
+  claimLevel: integer('claim_level'), // 1-10 proficiency (optional)
+
+  // Validity
+  expiresAtTick: bigint('expires_at_tick', { mode: 'number' }),
+  revoked: boolean('revoked').notNull().default(false),
+  revokedAtTick: bigint('revoked_at_tick', { mode: 'number' }),
+
+  // Timestamps
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('agent_credentials_tenant_idx').on(table.tenantId),
+  index('agent_credentials_issuer_idx').on(table.issuerId),
+  index('agent_credentials_subject_idx').on(table.subjectId),
+  index('agent_credentials_claim_type_idx').on(table.claimType),
+  index('agent_credentials_tick_idx').on(table.tick),
+]);
+
+// =============================================================================
+// GOSSIP EVENTS (Phase 4: §35 - Analytics only)
+// =============================================================================
+
+export const gossipEvents = pgTable('gossip_events', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  tick: bigint('tick', { mode: 'number' }).notNull(),
+
+  sourceAgentId: uuid('source_agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  targetAgentId: uuid('target_agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  subjectAgentId: uuid('subject_agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+
+  topic: varchar('topic', { length: 50 }).notNull(), // skill, behavior, transaction, warning, recommendation
+  claim: text('claim').notNull(),
+  sentiment: integer('sentiment').notNull(), // -100 to +100
+
+  // Evidence linking
+  evidenceEventId: bigint('evidence_event_id', { mode: 'number' }),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('gossip_events_tenant_tick_idx').on(table.tenantId, table.tick),
+  index('gossip_events_subject_idx').on(table.subjectAgentId),
+  index('gossip_events_source_idx').on(table.sourceAgentId),
+]);
+
+// =============================================================================
+// AGENT LINEAGES (Phase 4: §36 - Reproduction)
+// =============================================================================
+
+export const agentLineages = pgTable('agent_lineages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Agent
+  agentId: uuid('agent_id').notNull().unique().references(() => agents.id, { onDelete: 'cascade' }),
+
+  // Lineage
+  generation: integer('generation').notNull().default(0),
+  parentIds: jsonb('parent_ids').notNull().default([]), // Array of parent UUIDs
+  spawnedAtTick: bigint('spawned_at_tick', { mode: 'number' }).notNull(),
+  spawnedByParentId: uuid('spawned_by_parent_id').references(() => agents.id),
+
+  // Traits
+  systemPromptBase: text('system_prompt_base'),
+  mutations: jsonb('mutations').notNull().default([]),
+
+  // Initial state
+  initialBalance: real('initial_balance'),
+  initialEnergy: real('initial_energy'),
+  initialSpawnX: integer('initial_spawn_x'),
+  initialSpawnY: integer('initial_spawn_y'),
+
+  // Inherited relationships
+  inheritedRelationships: jsonb('inherited_relationships').notNull().default([]),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('agent_lineages_tenant_idx').on(table.tenantId),
+  index('agent_lineages_generation_idx').on(table.generation),
+  index('agent_lineages_spawned_by_idx').on(table.spawnedByParentId),
+]);
+
+export const reproductionStates = pgTable('reproduction_states', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  parentAgentId: uuid('parent_agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  partnerAgentId: uuid('partner_agent_id').references(() => agents.id),
+
+  gestationStartTick: bigint('gestation_start_tick', { mode: 'number' }).notNull(),
+  gestationDurationTicks: integer('gestation_duration_ticks').notNull(),
+
+  offspringAgentId: uuid('offspring_agent_id').references(() => agents.id),
+  status: varchar('status', { length: 50 }).notNull(), // gestating, completed, failed
+  failureReason: text('failure_reason'),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (table) => [
+  index('reproduction_states_parent_idx').on(table.parentAgentId),
+  index('reproduction_states_status_idx').on(table.status),
+]);
+
+// =============================================================================
+// LLM METRICS (Phase 4: §37 - Performance Monitoring)
+// =============================================================================
+
+export const llmMetrics = pgTable('llm_metrics', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  modelId: varchar('model_id', { length: 100 }).notNull(),
+
+  tick: bigint('tick', { mode: 'number' }).notNull(),
+
+  // Performance
+  latencyMs: integer('latency_ms').notNull(),
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  costUsd: real('cost_usd'),
+
+  // Quality
+  success: boolean('success').notNull().default(true),
+  usedFallback: boolean('used_fallback').notNull().default(false),
+  errorType: varchar('error_type', { length: 100 }),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('llm_metrics_tenant_tick_idx').on(table.tenantId, table.tick),
+  index('llm_metrics_agent_idx').on(table.agentId),
+  index('llm_metrics_model_idx').on(table.modelId),
+]);
+
+export const tokenBudgets = pgTable('token_budgets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  agentId: uuid('agent_id').unique().references(() => agents.id, { onDelete: 'cascade' }), // NULL for tenant-wide default
+
+  maxInputTokens: integer('max_input_tokens').notNull().default(2000),
+  maxOutputTokens: integer('max_output_tokens').notNull().default(256),
+  maxTokensPerTick: integer('max_tokens_per_tick').notNull().default(15000),
+  maxLatencyMs: integer('max_latency_ms').notNull().default(30000),
+
+  thinkingRatioWarn: real('thinking_ratio_warn').notNull().default(3.0),
+  thinkingRatioCritical: real('thinking_ratio_critical').notNull().default(5.0),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('token_budgets_tenant_idx').on(table.tenantId),
+]);
+
+// =============================================================================
 // Type exports
 // =============================================================================
 
@@ -722,6 +910,26 @@ export type ExternalAgent = typeof externalAgents.$inferSelect;
 export type NewExternalAgent = typeof externalAgents.$inferInsert;
 export type ApiUsage = typeof apiUsage.$inferSelect;
 export type NewApiUsage = typeof apiUsage.$inferInsert;
+
+// Phase 4: Verifiable Credentials types (§34)
+export type AgentCredential = typeof agentCredentials.$inferSelect;
+export type NewAgentCredential = typeof agentCredentials.$inferInsert;
+
+// Phase 4: Gossip Events types (§35)
+export type GossipEvent = typeof gossipEvents.$inferSelect;
+export type NewGossipEvent = typeof gossipEvents.$inferInsert;
+
+// Phase 4: Reproduction types (§36)
+export type AgentLineage = typeof agentLineages.$inferSelect;
+export type NewAgentLineage = typeof agentLineages.$inferInsert;
+export type ReproductionState = typeof reproductionStates.$inferSelect;
+export type NewReproductionState = typeof reproductionStates.$inferInsert;
+
+// Phase 4: LLM Performance types (§37)
+export type LLMMetric = typeof llmMetrics.$inferSelect;
+export type NewLLMMetric = typeof llmMetrics.$inferInsert;
+export type TokenBudget = typeof tokenBudgets.$inferSelect;
+export type NewTokenBudget = typeof tokenBudgets.$inferInsert;
 
 // Backwards compatibility alias (for migration period)
 export type Location = Shelter;

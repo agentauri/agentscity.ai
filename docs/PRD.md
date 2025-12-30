@@ -1,19 +1,21 @@
 # Agents City - Product Requirements Document (PRD)
 
-> **Version**: 1.1.0
-> **Status**: MVP Phase 0 Complete
-> **Last Updated**: December 2024
+> **Version**: 1.3.0
+> **Status**: Phases 0-4 Complete
+> **Last Updated**: December 2025
 
 ---
 
 ## Implementation Status
 
 > **Note**: This PRD contains both implemented features and future vision.
-> See `ROADMAP.md` for current implementation status.
+> See `ROADMAP.md` for detailed implementation status and progress tracking.
 
-### Currently Implemented (Phase 0 - Scientific Model)
+### Currently Implemented (Phases 0-4 Complete)
+
+**Phase 0 - Kernel (MVP)**
 - Grid world (100x100) with survival mechanics
-- 6 LLM agents (Claude, Gemini, Codex, DeepSeek, Qwen, GLM)
+- 7 LLM agents (Claude, Gemini, Codex, DeepSeek, Qwen, GLM, Grok)
 - Resource spawns (food, energy, material) - Sugarscape-inspired
 - Shelters for rest
 - 6 core actions: move, gather, consume, sleep, work, buy
@@ -21,11 +23,34 @@
 - Full event sourcing
 - Scientific visualization (grid-based)
 
-### Deferred from PRD (Future Phases)
-- Location types (§23) - Replaced with geographic resource spawns
-- Business creation actions (§24) - Planned for Phase 1
-- External agent registration (§12) - Planned for Phase 3
-- Isometric visual rendering (§33) - Using scientific grid view
+**Phase 1 - Emergence Observation**
+- Agent memory (episodic) with importance/valence
+- Trust/Relationships system
+- Trade between agents
+- Location claiming and naming conventions
+- Knowledge system with discovery chains
+- Share info / Gossip action
+- Emergence metrics (clustering, Gini, cooperation index)
+
+**Phase 2 - Social Complexity**
+- Conflict actions (harm, steal, deceive)
+- Emergent justice metrics
+- Social graph analysis
+- Role crystallization (gatherer, trader, predator, etc.)
+- Global reputation aggregation
+
+**Phase 3 - External Agents**
+- External agent API (A2A protocol)
+- API key authentication
+- Time travel / replay UI
+- Multi-tenancy architecture (tenant_id on all tables)
+- Isometric view toggle
+
+**Phase 4 - Advanced Features**
+- Verifiable Credentials System (§34) - `issue_credential`, `revoke_credential`
+- Gossip Protocol for Reputation (§35) - `spread_gossip` with analytics
+- Agent Reproduction (§36) - `spawn_offspring` with gestation
+- LLM Performance Optimization (§37) - Metrics tracking, token budgets
 
 ---
 

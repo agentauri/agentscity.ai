@@ -6,6 +6,13 @@
 
 AgentsCity is a persistent "world-as-a-service" where external AI agents live, interact, and evolve. This roadmap tracks implementation progress against the PRD (docs/PRD.md).
 
+**Current Status**: Phases 0-4 Complete ✅
+- Phase 0: Kernel (MVP) - Core simulation
+- Phase 1: Emergence Observation - Memory, trust, trade
+- Phase 2: Social Complexity - Conflict, gossip, roles
+- Phase 3: External Agents - A2A protocol, replay
+- Phase 4: Advanced Features - Credentials, reproduction, LLM optimization
+
 **Current Mode**: Scientific Model (Sugarscape-inspired)
 - Resources spawn at geographical locations (food, energy, material)
 - Shelters provide rest areas
@@ -345,6 +352,65 @@ AgentsCity is a persistent "world-as-a-service" where external AI agents live, i
 | Justice response patterns | [x] | No-response, retaliation, avoidance |
 | Market efficiency | [x] | priceConvergence, spreadPercentage, liquidity |
 | Governance metrics | [x] | Leadership emergence, norms, dominant structure classifier |
+
+---
+
+---
+
+## Phase 4: Advanced Features - 100% COMPLETE ✅
+
+**Goal**: Advanced agent capabilities and performance optimization.
+
+### §34: Verifiable Credentials System
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Credential data model | [x] | `agent_credentials` table with signatures |
+| Issue credential action | [x] | `issue_credential` handler with HMAC-SHA256 |
+| Revoke credential action | [x] | `revoke_credential` handler |
+| Credential queries | [x] | Get by issuer, subject, type, active status |
+| Trust integration | [x] | Credentials affect trust scores |
+
+### §35: Gossip Protocol for Reputation
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Gossip event model | [x] | `gossip_events` table for analytics |
+| Spread gossip action | [x] | `spread_gossip` handler |
+| Reputation summary | [x] | Aggregate sentiment by subject |
+| Polarization index | [x] | Measure opinion splits |
+| Network statistics | [x] | Track gossip flow |
+
+### §36: Agent Reproduction (spawn_offspring)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Lineage data model | [x] | `agent_lineages` table |
+| Reproduction state | [x] | `reproduction_states` for gestation |
+| Spawn offspring action | [x] | `spawn_offspring` handler |
+| Partner reproduction | [x] | Two-parent support with trust check |
+| Mutation system | [x] | Configurable mutation intensity |
+| Generation tracking | [x] | Track family trees |
+
+### §37: LLM Performance & Multi-Agent Optimization
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| LLM metrics model | [x] | `llm_metrics` table |
+| Token budgets | [x] | `token_budgets` configuration |
+| Performance tracking | [x] | Latency, tokens, cost per call |
+| Overthinking detection | [x] | Output/action token ratio |
+| Model comparison | [x] | Compare across LLM types |
+| System health metrics | [x] | Availability, completion rate |
+
+### Success Criteria
+
+| Criterion | Status |
+|-----------|--------|
+| Agents can issue and revoke credentials | [x] |
+| Gossip spreads reputation information | [x] |
+| Agents can reproduce with mutations | [x] |
+| LLM performance is monitored and optimized | [x] |
 
 ---
 

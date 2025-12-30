@@ -29,8 +29,10 @@ import { applyNeedsDecay, type DecayResult } from './needs-decay';
 import { processAgentsTick } from '../agents/orchestrator';
 import { captureVariantSnapshot, updateVariantStatus, updateExperimentStatus, getNextPendingVariant } from '../db/queries/experiments';
 import { updateAllAgentRoles } from '../db/queries/roles';
+import { getGestatingStates, completeReproduction, createLineage, getLineage } from '../db/queries/reproduction';
+import { createAgent } from '../db/queries/agents';
 import { CONFIG } from '../config';
-import type { Agent } from '../db/schema';
+import type { Agent, NewAgent } from '../db/schema';
 
 // Role update interval (every N ticks)
 const ROLE_UPDATE_INTERVAL = 20;
@@ -342,6 +344,43 @@ class TickEngine {
       }
     }
 
+    // Phase 4: Gestation completion - spawn offspring when gestation period ends
+    try {
+      const gestatingStates = await getGestatingStates();
+      for (const state of gestatingStates) {
+        const gestationEndTick = state.gestationStartTick + state.gestationDurationTicks;
+        if (tick >= gestationEndTick) {
+          // Spawn the offspring
+          const offspring = await this.spawnOffspring(state, tick);
+          if (offspring) {
+            await completeReproduction(state.id, offspring.id);
+
+            // Emit birth event
+            const birthEvent: WorldEvent = {
+              id: uuid(),
+              type: 'agent_born',
+              tick,
+              timestamp: Date.now(),
+              agentId: offspring.id,
+              payload: {
+                parentId: state.parentAgentId,
+                partnerId: state.partnerAgentId,
+                generation: offspring.generation,
+                x: offspring.x,
+                y: offspring.y,
+              },
+            };
+            allEvents.push(birthEvent);
+            await publishEvent(birthEvent);
+
+            console.log(`[TickEngine] Offspring ${offspring.id.slice(0, 8)} born to parent ${state.parentAgentId.slice(0, 8)}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[TickEngine] Error processing gestations:', error);
+    }
+
     logger.info(`Tick ${tick} completed in ${duration}ms`, {
       agentCount: aliveAgents.length,
       deaths: deaths.length,
@@ -384,6 +423,108 @@ class TickEngine {
       this.stop();
       this.start();
     }
+  }
+
+  /**
+   * Spawn offspring from a completed gestation
+   */
+  private async spawnOffspring(
+    reproductionState: { parentAgentId: string; partnerAgentId: string | null; id: string },
+    tick: number
+  ): Promise<{ id: string; generation: number; x: number; y: number } | null> {
+    try {
+      // Get parent info
+      const parentAgent = (await getAliveAgents()).find(a => a.id === reproductionState.parentAgentId);
+      if (!parentAgent) {
+        console.warn(`[TickEngine] Parent agent ${reproductionState.parentAgentId} not found for offspring`);
+        return null;
+      }
+
+      // Get parent lineage to determine generation
+      const parentLineage = await getLineage(reproductionState.parentAgentId);
+      const parentGeneration = parentLineage?.generation ?? 0;
+      const offspringGeneration = parentGeneration + 1;
+
+      // Determine offspring LLM type (inherit from parent or random mutation)
+      const llmTypes: Array<'claude' | 'gemini' | 'codex' | 'deepseek' | 'qwen' | 'glm' | 'grok'> =
+        ['claude', 'gemini', 'codex', 'deepseek', 'qwen', 'glm', 'grok'];
+      const offspringLLMType = Math.random() < 0.8
+        ? parentAgent.llmType as typeof llmTypes[number]
+        : llmTypes[Math.floor(Math.random() * llmTypes.length)];
+
+      // Generate offspring color (slight variation from parent)
+      const parentColor = parentAgent.color || '#888888';
+      const offspringColor = this.mutateColor(parentColor);
+
+      // Spawn near parent
+      const offspringX = parentAgent.x + Math.floor(Math.random() * 3) - 1;
+      const offspringY = parentAgent.y + Math.floor(Math.random() * 3) - 1;
+
+      // Create offspring agent
+      const offspringId = uuid();
+      const offspring: NewAgent = {
+        id: offspringId,
+        llmType: offspringLLMType,
+        x: Math.max(0, Math.min(99, offspringX)),
+        y: Math.max(0, Math.min(99, offspringY)),
+        hunger: CONFIG.actions.spawnOffspring.offspringStartEnergy,
+        energy: CONFIG.actions.spawnOffspring.offspringStartEnergy,
+        health: 100,
+        balance: CONFIG.actions.spawnOffspring.offspringStartBalance,
+        state: 'idle',
+        color: offspringColor,
+      };
+
+      await createAgent(offspring);
+
+      // Create lineage record
+      const parentIds = reproductionState.partnerAgentId
+        ? [reproductionState.parentAgentId, reproductionState.partnerAgentId]
+        : [reproductionState.parentAgentId];
+
+      await createLineage({
+        agentId: offspringId,
+        generation: offspringGeneration,
+        parentIds,
+        spawnedAtTick: tick,
+        spawnedByParentId: reproductionState.parentAgentId,
+        initialBalance: CONFIG.actions.spawnOffspring.offspringStartBalance,
+        initialEnergy: CONFIG.actions.spawnOffspring.offspringStartEnergy,
+        initialSpawnX: offspring.x,
+        initialSpawnY: offspring.y,
+        mutations: offspringLLMType !== parentAgent.llmType ? [{ type: 'llm_type', from: parentAgent.llmType, to: offspringLLMType }] : [],
+        inheritedRelationships: [],
+      });
+
+      return {
+        id: offspringId,
+        generation: offspringGeneration,
+        x: offspring.x,
+        y: offspring.y,
+      };
+    } catch (error) {
+      console.error('[TickEngine] Error spawning offspring:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Slightly mutate a color for offspring
+   */
+  private mutateColor(hexColor: string): string {
+    // Parse hex color
+    const r = parseInt(hexColor.slice(1, 3), 16);
+    const g = parseInt(hexColor.slice(3, 5), 16);
+    const b = parseInt(hexColor.slice(5, 7), 16);
+
+    // Add small random variation (-20 to +20)
+    const mutate = (val: number) => Math.max(0, Math.min(255, val + Math.floor(Math.random() * 41) - 20));
+
+    const newR = mutate(r).toString(16).padStart(2, '0');
+    const newG = mutate(g).toString(16).padStart(2, '0');
+    const newB = mutate(b).toString(16).padStart(2, '0');
+
+    return `#${newR}${newG}${newB}`;
   }
 }
 

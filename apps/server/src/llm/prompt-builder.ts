@@ -49,6 +49,10 @@ Respond with ONLY a JSON object. No other text. Format:
 - share_info: Share information about a third party with a nearby agent. Params: { "targetAgentId": string, "subjectAgentId": string, "infoType": "location"|"reputation"|"warning"|"recommendation", "claim"?: string, "sentiment"?: -100 to 100 }
 - claim: Mark a location as yours (home, territory, resource, danger, meeting_point). Params: { "claimType": "territory"|"home"|"resource"|"danger"|"meeting_point", "description"?: string }
 - name_location: Propose a name for your current location. Params: { "name": string }
+- issue_credential: Issue a verifiable credential to vouch for another agent's skills/character. Params: { "subjectAgentId": string, "claimType": "skill"|"experience"|"membership"|"character"|"custom", "description": string, "evidence"?: string, "level"?: 1-10, "expiresAtTick"?: number }
+- revoke_credential: Revoke a credential you previously issued. Params: { "credentialId": string, "reason"?: string }
+- spread_gossip: Share reputation information about a third agent with a nearby agent. Params: { "targetAgentId": string, "subjectAgentId": string, "topic": "skill"|"behavior"|"transaction"|"warning"|"recommendation", "claim": string, "sentiment": -100 to 100 }
+- spawn_offspring: Reproduce to create a new agent (requires high resources). Params: { "partnerId"?: string, "inheritSystemPrompt"?: boolean, "mutationIntensity"?: 0-1 }
 
 ## World Model
 - Resources spawn at specific locations (food, energy, material)
@@ -471,6 +475,52 @@ export function buildAvailableActions(obs: AgentObservation): AvailableAction[] 
     type: 'name_location',
     description: 'Propose a name for current location',
   });
+
+  // Phase 4: Verifiable Credentials (§34)
+
+  // Issue credential is available if there are nearby agents
+  if (nearbyForShare.length > 0 && obs.self.energy >= 2) {
+    const agentIds = nearbyForShare.map((a) => a.id.slice(0, 8)).join(', ');
+    actions.push({
+      type: 'issue_credential',
+      description: `Issue credential to vouch for nearby agent (${agentIds}) - skill/experience/character`,
+      cost: { energy: 2 },
+    });
+  }
+
+  // Revoke credential is always available (if agent has issued any)
+  actions.push({
+    type: 'revoke_credential',
+    description: 'Revoke a credential you previously issued',
+  });
+
+  // Phase 4: Gossip Protocol (§35)
+
+  // Spread gossip is available if nearby agents exist AND agent knows about other agents
+  if (nearbyForShare.length > 0 && obs.knownAgents && obs.knownAgents.length > 0 && obs.self.energy >= 1) {
+    const targetIds = nearbyForShare.map((a) => a.id.slice(0, 8)).join(', ');
+    const knownIds = obs.knownAgents.map((k) => k.id.slice(0, 8)).join(', ');
+    actions.push({
+      type: 'spread_gossip',
+      description: `Spread gossip about (${knownIds}) to nearby (${targetIds}) - positive or negative`,
+      cost: { energy: 1 },
+    });
+  }
+
+  // Phase 4: Reproduction (§36)
+
+  // Spawn offspring is available if agent has sufficient resources
+  const canReproduce = obs.self.balance >= 500 && obs.self.energy >= 80 && obs.self.health >= 90;
+  if (canReproduce) {
+    const partnerInfo = adjacentAgents.length > 0
+      ? ` (can partner with ${adjacentAgents.map((a) => a.id.slice(0, 8)).join(', ')})`
+      : ' (solo reproduction)';
+    actions.push({
+      type: 'spawn_offspring',
+      description: `Reproduce to create offspring${partnerInfo} - costs 200 CITY, 30 energy`,
+      cost: { energy: 30, money: 200 },
+    });
+  }
 
   return actions;
 }

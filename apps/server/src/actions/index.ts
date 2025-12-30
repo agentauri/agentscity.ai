@@ -20,6 +20,13 @@ import { handleSteal } from './handlers/steal';
 import { handleDeceive } from './handlers/deceive';
 // Phase 2: Social Discovery
 import { handleShareInfo } from './handlers/share-info';
+// Phase 4: Verifiable Credentials (§34)
+import { handleIssueCredential } from './handlers/issue-credential';
+import { handleRevokeCredential } from './handlers/revoke-credential';
+// Phase 4: Gossip Protocol (§35)
+import { handleSpreadGossip } from './handlers/spread-gossip';
+// Phase 4: Reproduction (§36)
+import { handleSpawnOffspring } from './handlers/spawn-offspring';
 
 // Action handler registry
 const handlers: Map<ActionType, ActionHandler> = new Map();
@@ -41,6 +48,13 @@ handlers.set('steal', handleSteal as ActionHandler);
 handlers.set('deceive', handleDeceive as ActionHandler);
 // Phase 2: Social Discovery
 handlers.set('share_info', handleShareInfo as ActionHandler);
+// Phase 4: Verifiable Credentials (§34)
+handlers.set('issue_credential', handleIssueCredential as ActionHandler);
+handlers.set('revoke_credential', handleRevokeCredential as ActionHandler);
+// Phase 4: Gossip Protocol (§35)
+handlers.set('spread_gossip', handleSpreadGossip as ActionHandler);
+// Phase 4: Reproduction (§36)
+handlers.set('spawn_offspring', handleSpawnOffspring as ActionHandler);
 
 /**
  * Register a custom action handler

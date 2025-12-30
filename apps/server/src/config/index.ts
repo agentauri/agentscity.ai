@@ -170,6 +170,54 @@ export const CONFIG = {
       /** Trust penalty for sharing negative info (gossip) */
       trustPenaltyNegative: env('SHARE_INFO_TRUST_NEGATIVE', -1),
     },
+
+    // Phase 4: Verifiable Credentials (§34)
+    issueCredential: {
+      /** Maximum distance for issuing credentials */
+      maxDistance: env('ISSUE_CREDENTIAL_MAX_DISTANCE', 3),
+      /** Energy cost for issuing */
+      energyCost: env('ISSUE_CREDENTIAL_ENERGY_COST', 2),
+      /** Trust gain when receiving credential */
+      trustGainOnIssue: env('ISSUE_CREDENTIAL_TRUST_GAIN', 10),
+    },
+
+    // Phase 4: Gossip Protocol (§35)
+    spreadGossip: {
+      /** Maximum distance for spreading gossip */
+      maxDistance: env('SPREAD_GOSSIP_MAX_DISTANCE', 3),
+      /** Energy cost for gossip */
+      energyCost: env('SPREAD_GOSSIP_ENERGY_COST', 1),
+      /** Trust gain for positive gossip */
+      trustGainPositive: env('SPREAD_GOSSIP_TRUST_POSITIVE', 2),
+      /** Trust penalty for negative gossip */
+      trustPenaltyNegative: env('SPREAD_GOSSIP_TRUST_NEGATIVE', -2),
+    },
+
+    // Phase 4: Reproduction (§36)
+    spawnOffspring: {
+      /** Minimum balance required for reproduction */
+      minBalance: env('SPAWN_MIN_BALANCE', 500),
+      /** Minimum energy required for reproduction */
+      minEnergy: env('SPAWN_MIN_ENERGY', 80),
+      /** Minimum health required for reproduction */
+      minHealth: env('SPAWN_MIN_HEALTH', 90),
+      /** Balance cost for reproduction */
+      balanceCost: env('SPAWN_BALANCE_COST', 200),
+      /** Energy cost for reproduction */
+      energyCost: env('SPAWN_ENERGY_COST', 30),
+      /** Gestation period in ticks */
+      gestationTicks: env('SPAWN_GESTATION_TICKS', 10),
+      /** Maximum partner distance */
+      maxPartnerDistance: env('SPAWN_MAX_PARTNER_DISTANCE', 2),
+      /** Minimum trust for partner reproduction */
+      minPartnerTrust: env('SPAWN_MIN_PARTNER_TRUST', 30),
+      /** Trust gain from reproduction */
+      trustGainOnReproduction: env('SPAWN_TRUST_GAIN', 20),
+      /** Offspring starting balance (from parent's cost) */
+      offspringStartBalance: env('SPAWN_OFFSPRING_BALANCE', 100),
+      /** Offspring starting energy */
+      offspringStartEnergy: env('SPAWN_OFFSPRING_ENERGY', 80),
+    },
   },
 
   // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@
 
 import { eq, sql, desc, and, gte } from 'drizzle-orm';
 import { db, agents, events, ledger, agentRelationships, agentKnowledge, inventory } from '../index';
+import { agentCredentials, gossipEvents, agentLineages, reproductionStates, llmMetrics } from '../schema';
 
 // =============================================================================
 // Types
@@ -203,6 +204,35 @@ export interface Phase2Metrics {
   socialGraph: SocialGraphMetrics;
 }
 
+// Phase 4 Metrics (Credentials, Gossip, Reproduction, LLM Performance)
+export interface Phase4Metrics {
+  credentials: {
+    totalIssued: number;
+    totalActive: number;
+    totalRevoked: number;
+    byClaimType: Record<string, number>;
+  };
+  gossip: {
+    totalEvents: number;
+    averageSentiment: number;
+    byTopic: Record<string, number>;
+    mostDiscussedAgents: Array<{ agentId: string; count: number }>;
+  };
+  reproduction: {
+    totalBirths: number;
+    gestationsInProgress: number;
+    generationDistribution: Record<number, number>;
+    maxGeneration: number;
+  };
+  llmPerformance: {
+    totalCalls: number;
+    avgLatencyMs: number;
+    successRate: number;
+    fallbackRate: number;
+    byModel: Record<string, { calls: number; avgLatency: number; successRate: number }>;
+  };
+}
+
 export interface AnalyticsSnapshot {
   survival: SurvivalMetrics;
   economy: EconomyMetrics;
@@ -210,6 +240,7 @@ export interface AnalyticsSnapshot {
   temporal: TemporalMetrics;
   emergence?: EmergenceMetrics; // Phase 1: optional until tables exist
   phase2?: Phase2Metrics; // Phase 2: advanced analytics
+  phase4?: Phase4Metrics; // Phase 4: credentials, gossip, reproduction, LLM
   timestamp: number;
 }
 
@@ -2494,6 +2525,153 @@ export async function getResourceEfficiencyMetrics(): Promise<ResourceEfficiency
 }
 
 // =============================================================================
+// Phase 4 Metrics
+// =============================================================================
+
+export async function getPhase4Metrics(): Promise<Phase4Metrics> {
+  // Credentials metrics
+  const credentialsStats = await db
+    .select({
+      totalIssued: sql<number>`COUNT(*)`,
+      totalActive: sql<number>`COUNT(*) FILTER (WHERE ${agentCredentials.revoked} = false)`,
+      totalRevoked: sql<number>`COUNT(*) FILTER (WHERE ${agentCredentials.revoked} = true)`,
+    })
+    .from(agentCredentials);
+
+  const credentialsByType = await db
+    .select({
+      claimType: agentCredentials.claimType,
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(agentCredentials)
+    .groupBy(agentCredentials.claimType);
+
+  // Gossip metrics
+  const gossipStats = await db
+    .select({
+      totalEvents: sql<number>`COUNT(*)`,
+      averageSentiment: sql<number>`AVG(${gossipEvents.sentiment})`,
+    })
+    .from(gossipEvents);
+
+  const gossipByTopic = await db
+    .select({
+      topic: gossipEvents.topic,
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(gossipEvents)
+    .groupBy(gossipEvents.topic);
+
+  const mostDiscussed = await db
+    .select({
+      agentId: gossipEvents.subjectAgentId,
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(gossipEvents)
+    .groupBy(gossipEvents.subjectAgentId)
+    .orderBy(sql`COUNT(*) DESC`)
+    .limit(10);
+
+  // Reproduction metrics
+  const reproStats = await db
+    .select({
+      totalBirths: sql<number>`COUNT(*) FILTER (WHERE ${reproductionStates.status} = 'completed')`,
+      gestationsInProgress: sql<number>`COUNT(*) FILTER (WHERE ${reproductionStates.status} = 'gestating')`,
+    })
+    .from(reproductionStates);
+
+  const generationStats = await db
+    .select({
+      generation: agentLineages.generation,
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(agentLineages)
+    .groupBy(agentLineages.generation);
+
+  const maxGen = await db
+    .select({
+      maxGeneration: sql<number>`COALESCE(MAX(${agentLineages.generation}), 0)`,
+    })
+    .from(agentLineages);
+
+  // LLM metrics
+  const llmStats = await db
+    .select({
+      totalCalls: sql<number>`COUNT(*)`,
+      avgLatencyMs: sql<number>`AVG(${llmMetrics.latencyMs})`,
+      successRate: sql<number>`AVG(CASE WHEN ${llmMetrics.success} THEN 1.0 ELSE 0.0 END)`,
+      fallbackRate: sql<number>`AVG(CASE WHEN ${llmMetrics.usedFallback} THEN 1.0 ELSE 0.0 END)`,
+    })
+    .from(llmMetrics);
+
+  const llmByModel = await db
+    .select({
+      modelId: llmMetrics.modelId,
+      calls: sql<number>`COUNT(*)`,
+      avgLatency: sql<number>`AVG(${llmMetrics.latencyMs})`,
+      successRate: sql<number>`AVG(CASE WHEN ${llmMetrics.success} THEN 1.0 ELSE 0.0 END)`,
+    })
+    .from(llmMetrics)
+    .groupBy(llmMetrics.modelId);
+
+  // Build response
+  const byClaimType: Record<string, number> = {};
+  for (const row of credentialsByType) {
+    byClaimType[row.claimType] = Number(row.count) || 0;
+  }
+
+  const byTopic: Record<string, number> = {};
+  for (const row of gossipByTopic) {
+    byTopic[row.topic] = Number(row.count) || 0;
+  }
+
+  const generationDistribution: Record<number, number> = {};
+  for (const row of generationStats) {
+    generationDistribution[row.generation] = Number(row.count) || 0;
+  }
+
+  const byModel: Record<string, { calls: number; avgLatency: number; successRate: number }> = {};
+  for (const row of llmByModel) {
+    byModel[row.modelId] = {
+      calls: Number(row.calls) || 0,
+      avgLatency: Number(row.avgLatency) || 0,
+      successRate: Number(row.successRate) || 0,
+    };
+  }
+
+  return {
+    credentials: {
+      totalIssued: Number(credentialsStats[0]?.totalIssued) || 0,
+      totalActive: Number(credentialsStats[0]?.totalActive) || 0,
+      totalRevoked: Number(credentialsStats[0]?.totalRevoked) || 0,
+      byClaimType,
+    },
+    gossip: {
+      totalEvents: Number(gossipStats[0]?.totalEvents) || 0,
+      averageSentiment: Number(gossipStats[0]?.averageSentiment) || 0,
+      byTopic,
+      mostDiscussedAgents: mostDiscussed.map((r) => ({
+        agentId: r.agentId,
+        count: Number(r.count) || 0,
+      })),
+    },
+    reproduction: {
+      totalBirths: Number(reproStats[0]?.totalBirths) || 0,
+      gestationsInProgress: Number(reproStats[0]?.gestationsInProgress) || 0,
+      generationDistribution,
+      maxGeneration: Number(maxGen[0]?.maxGeneration) || 0,
+    },
+    llmPerformance: {
+      totalCalls: Number(llmStats[0]?.totalCalls) || 0,
+      avgLatencyMs: Number(llmStats[0]?.avgLatencyMs) || 0,
+      successRate: Number(llmStats[0]?.successRate) || 0,
+      fallbackRate: Number(llmStats[0]?.fallbackRate) || 0,
+      byModel,
+    },
+  };
+}
+
+// =============================================================================
 // Combined Snapshot
 // =============================================================================
 
@@ -2523,6 +2701,15 @@ export async function getAnalyticsSnapshot(): Promise<AnalyticsSnapshot> {
     console.warn('[Analytics] Phase 2 metrics unavailable:', error);
   }
 
+  // Try to get Phase 4 metrics
+  let phase4: Phase4Metrics | undefined;
+  try {
+    phase4 = await getPhase4Metrics();
+  } catch (error) {
+    // Phase 4 tables may not exist yet - that's ok
+    console.warn('[Analytics] Phase 4 metrics unavailable:', error);
+  }
+
   return {
     survival,
     economy,
@@ -2530,6 +2717,7 @@ export async function getAnalyticsSnapshot(): Promise<AnalyticsSnapshot> {
     temporal,
     emergence,
     phase2,
+    phase4,
     timestamp: Date.now(),
   };
 }
