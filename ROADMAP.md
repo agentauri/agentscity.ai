@@ -266,8 +266,8 @@ AgentsCity is a persistent "world-as-a-service" where external AI agents live, i
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Unit tests | [x] | Queue worker, orchestrator, adapters (557 tests) |
-| Integration tests | [~] | Phase 2 flow tested |
+| Unit tests | [x] | Queue worker, orchestrator, adapters (613 tests) |
+| Integration tests | [x] | Tick cycle, trade, conflict, external agent flows |
 | LLM adapter tests | [x] | All 7 adapters tested |
 
 ### Medium Priority
@@ -283,7 +283,7 @@ AgentsCity is a persistent "world-as-a-service" where external AI agents live, i
 | Item | Status | Notes |
 |------|--------|-------|
 | Isometric view toggle | [x] | 2:1 isometric projection with depth sorting |
-| Sound effects | [ ] | Optional audio feedback |
+| Sound effects | [x] | Web Audio API with toggle, 8 event types |
 | Mobile-responsive UI | [x] | Touch support (pinch-zoom, drag-pan), bottom nav |
 
 ### Production Infrastructure
@@ -302,6 +302,7 @@ AgentsCity is a persistent "world-as-a-service" where external AI agents live, i
 
 | Date | Description |
 |------|-------------|
+| 2025-12-30 | test: add integration tests for tick cycle, trade, conflict, external agent |
 | 2025-12-30 | feat: implement technical debt, multi-tenancy, and production infrastructure |
 | 2025-12-29 | Feat: Phase 1 Emergence - location claiming + naming conventions |
 | 2025-12-29 | Feat: Emergence detection analytics (trends, roles, stability) |
@@ -323,7 +324,7 @@ AgentsCity is a persistent "world-as-a-service" where external AI agents live, i
 | Experiment | Status | Notes |
 |------------|--------|-------|
 | Random Walk (null hypothesis) | [x] | `useRandomWalk` mode in orchestrator |
-| Sugarscape Replication | [~] | Resource distribution implemented |
+| Sugarscape Replication | [x] | Grid, metabolism, Gini, trade mechanics |
 | Rule-Based vs LLM | [x] | `useOnlyFallback` mode in orchestrator |
 
 ### Metrics to Implement
@@ -334,7 +335,7 @@ AgentsCity is a persistent "world-as-a-service" where external AI agents live, i
 | Cooperation index | [x] | Based on trust, trades, clustering |
 | Clustering coefficient | [x] | Spatial agent clustering |
 | Emergence index | [x] | Metric trends + anomaly detection |
-| Resource efficiency | [~] | Gather action tracking |
+| Resource efficiency | [x] | Gather analysis by LLM type with API endpoint |
 | Survival rate by LLM | [x] | Full breakdown by LLM type |
 | Agent role classification | [x] | Behavioral role detection |
 | System stability | [x] | Variance, churn, system state |

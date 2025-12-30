@@ -1809,6 +1809,88 @@ export async function getReputationSummary(): Promise<{
 }
 
 // =============================================================================
+// Resource Efficiency Metrics
+// =============================================================================
+
+export interface ResourceEfficiencyMetrics {
+  byLlmType: {
+    llmType: string;
+    gatherCount: number;
+    totalResourcesGathered: number;
+    avgResourcesPerGather: number;
+    efficiencyScore: number; // resources gathered / actions taken
+  }[];
+  overall: {
+    totalGatherActions: number;
+    totalResourcesGathered: number;
+    avgResourcesPerGather: number;
+    mostEfficient: string | null;
+    leastEfficient: string | null;
+  };
+}
+
+/**
+ * Calculate resource efficiency by LLM type
+ * Efficiency = total resources gathered / total gather actions
+ */
+export async function getResourceEfficiencyMetrics(): Promise<ResourceEfficiencyMetrics> {
+  // Query gather events with resource quantities
+  const gatherData = await db.execute<{
+    llm_type: string;
+    gather_count: string;
+    total_resources: string;
+  }>(sql`
+    SELECT
+      a.llm_type,
+      COUNT(e.id) as gather_count,
+      COALESCE(SUM(COALESCE((e.payload->>'quantity')::int, 1)), 0) as total_resources
+    FROM events e
+    JOIN agents a ON e.agent_id = a.id
+    WHERE e.event_type = 'agent_gathered'
+    GROUP BY a.llm_type
+    ORDER BY a.llm_type
+  `);
+
+  const gatherRows = Array.isArray(gatherData) ? gatherData : (gatherData as any).rows || [];
+
+  // Calculate by LLM type
+  const byLlmType = gatherRows.map((row) => {
+    const gatherCount = Number(row.gather_count) || 0;
+    const totalResourcesGathered = Number(row.total_resources) || 0;
+    const avgResourcesPerGather = gatherCount > 0 ? totalResourcesGathered / gatherCount : 0;
+
+    return {
+      llmType: row.llm_type,
+      gatherCount,
+      totalResourcesGathered,
+      avgResourcesPerGather: Math.round(avgResourcesPerGather * 100) / 100,
+      efficiencyScore: Math.round(avgResourcesPerGather * 100) / 100,
+    };
+  });
+
+  // Calculate overall stats
+  const totalGatherActions = byLlmType.reduce((sum, r) => sum + r.gatherCount, 0);
+  const totalResourcesGathered = byLlmType.reduce((sum, r) => sum + r.totalResourcesGathered, 0);
+  const avgResourcesPerGather = totalGatherActions > 0 ? totalResourcesGathered / totalGatherActions : 0;
+
+  // Find most/least efficient
+  const sortedByEfficiency = [...byLlmType].sort((a, b) => b.efficiencyScore - a.efficiencyScore);
+  const mostEfficient = sortedByEfficiency.length > 0 ? sortedByEfficiency[0].llmType : null;
+  const leastEfficient = sortedByEfficiency.length > 0 ? sortedByEfficiency[sortedByEfficiency.length - 1].llmType : null;
+
+  return {
+    byLlmType,
+    overall: {
+      totalGatherActions,
+      totalResourcesGathered,
+      avgResourcesPerGather: Math.round(avgResourcesPerGather * 100) / 100,
+      mostEfficient,
+      leastEfficient,
+    },
+  };
+}
+
+// =============================================================================
 // Combined Snapshot
 // =============================================================================
 

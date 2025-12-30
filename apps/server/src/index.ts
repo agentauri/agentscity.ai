@@ -22,7 +22,7 @@ import { logAdapterStatus } from './llm';
 import { getAllAgents } from './db/queries/agents';
 import { getAllShelters, getAllResourceSpawns, getWorldState, getCurrentTick, initWorldState, pauseWorld, resumeWorld, resetWorldData } from './db/queries/world';
 import { getRecentEvents, initGlobalVersion } from './db/queries/events';
-import { getAnalyticsSnapshot, getSurvivalMetrics, getEconomyMetrics, getBehaviorMetrics, getTemporalMetrics } from './db/queries/analytics';
+import { getAnalyticsSnapshot, getSurvivalMetrics, getEconomyMetrics, getBehaviorMetrics, getTemporalMetrics, getResourceEfficiencyMetrics } from './db/queries/analytics';
 import {
   createExperiment,
   getExperimentWithVariants,
@@ -865,6 +865,25 @@ server.get<{ Querystring: { limit?: string } }>('/api/analytics/temporal', {
 }, async (request) => {
   const limit = Math.min(parseInt(request.query.limit || '50', 10), 100);
   return getTemporalMetrics(limit);
+});
+
+// Get resource efficiency metrics only
+server.get('/api/analytics/resource-efficiency', {
+  schema: {
+    description: 'Get resource efficiency metrics - gather action analysis by LLM type',
+    tags: ['Analytics'],
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          byLlmType: { type: 'array', items: { type: 'object' } },
+          overall: { type: 'object' },
+        },
+      },
+    },
+  },
+}, async () => {
+  return getResourceEfficiencyMetrics();
 });
 
 // =============================================================================

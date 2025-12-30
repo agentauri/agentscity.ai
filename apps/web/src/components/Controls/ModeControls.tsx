@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useEditorStore, useAppMode, useIsPaused } from '../../stores/editor';
+import { useSettingsStore, useSoundEnabled } from '../../stores/settings';
 
 interface ModeControlsProps {
   onStartSimulation: () => Promise<void>;
@@ -13,6 +14,8 @@ export function ModeControls({ onStartSimulation, onReset, onPause, onResume }: 
   const isPaused = useIsPaused();
   const { setMode, setPaused } = useEditorStore();
   const [isLoading, setIsLoading] = useState(false);
+  const soundEnabled = useSoundEnabled();
+  const { toggleSound } = useSettingsStore();
 
   // Handle pause/resume with BE sync
   const handlePauseToggle = async () => {
@@ -106,6 +109,32 @@ export function ModeControls({ onStartSimulation, onReset, onPause, onResume }: 
             </svg>
             <span className="hidden xs:inline">Pause</span>
           </>
+        )}
+      </button>
+
+      {/* Sound toggle button */}
+      <button
+        type="button"
+        onClick={toggleSound}
+        className={`px-2 py-1.5 sm:px-3 text-[11px] sm:text-xs font-medium rounded border flex items-center gap-1 ${
+          soundEnabled
+            ? 'bg-city-accent/20 text-city-accent border-city-accent/30 hover:bg-city-accent/30'
+            : 'bg-city-surface-hover text-city-text-muted border-city-border/50 hover:bg-city-border/50'
+        }`}
+        title={soundEnabled ? 'Sound enabled' : 'Sound disabled'}
+      >
+        {soundEnabled ? (
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sm:w-3 sm:h-3">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+          </svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sm:w-3 sm:h-3">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <line x1="23" y1="9" x2="17" y2="15" />
+            <line x1="17" y1="9" x2="23" y2="15" />
+          </svg>
         )}
       </button>
 

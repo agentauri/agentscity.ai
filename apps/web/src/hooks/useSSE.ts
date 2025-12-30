@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { useWorldStore, type WorldEvent, type AgentBubble } from '../stores/world';
+import { playSound } from './useAudio';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -82,6 +83,7 @@ export function useSSE() {
 
           case 'tick_start':
             setTick(data.tick);
+            playSound('tick');
             break;
 
           case 'tick_end':
@@ -115,6 +117,7 @@ export function useSSE() {
             // Action handler confirmation
             if (data.agentId) {
               updateAgent(data.agentId, { state: 'working' });
+              playSound('work');
             }
             break;
 
@@ -158,13 +161,33 @@ export function useSSE() {
               updateAgent(data.agentId, {
                 balance: data.payload.newBalance as number,
               });
+              // Play buy sound for purchases (negative balance change)
+              const delta = (data.payload.newBalance as number) - (data.payload.oldBalance as number || 0);
+              if (delta < 0) {
+                playSound('buy');
+              } else if (delta > 0) {
+                playSound('trade');
+              }
             }
             break;
 
           case 'agent_died':
             if (data.agentId) {
               updateAgent(data.agentId, { health: 0, state: 'dead' });
+              playSound('death');
             }
+            break;
+
+          case 'agent_traded':
+            playSound('trade');
+            break;
+
+          case 'agent_harmed':
+            playSound('harm');
+            break;
+
+          case 'agent_gathered':
+            playSound('gather');
             break;
 
           default:
@@ -232,6 +255,10 @@ export function useSSE() {
     // Other events
     eventSource.addEventListener('needs_updated', handleEvent);
     eventSource.addEventListener('balance_changed', handleEvent);
+    // Phase 1/2 events
+    eventSource.addEventListener('agent_traded', handleEvent);
+    eventSource.addEventListener('agent_harmed', handleEvent);
+    eventSource.addEventListener('agent_gathered', handleEvent);
     eventSource.addEventListener('ping', () => {
       // Keep-alive, no action needed
     });
