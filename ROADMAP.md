@@ -218,7 +218,7 @@ AgentsCity is a persistent "world-as-a-service" where external AI agents live, i
 | External agent polling | [x] | Pull mode via /observe + /decide |
 | API key authentication | [x] | SHA-256 hashed keys |
 | Time travel / replay UI | [x] | Full replay page with tick slider |
-| Multi-tenancy | [ ] | Deferred (isolated environments) |
+| Multi-tenancy | [x] | Schema ready (tenant_id on all tables) |
 
 ### API Endpoints (v1)
 
@@ -266,7 +266,7 @@ AgentsCity is a persistent "world-as-a-service" where external AI agents live, i
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Unit tests | [x] | Queue worker, orchestrator, adapters (538 tests) |
+| Unit tests | [x] | Queue worker, orchestrator, adapters (557 tests) |
 | Integration tests | [~] | Phase 2 flow tested |
 | LLM adapter tests | [x] | All 7 adapters tested |
 
@@ -274,17 +274,27 @@ AgentsCity is a persistent "world-as-a-service" where external AI agents live, i
 
 | Item | Status | Notes |
 |------|--------|-------|
-| LLM response caching | [ ] | Reduce API costs |
-| OpenTelemetry tracing | [ ] | Distributed observability |
-| Error boundaries in UI | [ ] | Graceful frontend failures |
+| LLM response caching | [x] | Redis-based with SHA-256 observation hashing |
+| OpenTelemetry tracing | [x] | Auto-instrumentation for Fastify, Redis, PostgreSQL |
+| Error boundaries in UI | [x] | React error boundaries with retry functionality |
 
 ### Low Priority
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Isometric view toggle | [ ] | Optional visual mode |
+| Isometric view toggle | [x] | 2:1 isometric projection with depth sorting |
 | Sound effects | [ ] | Optional audio feedback |
-| Mobile-responsive UI | [ ] | Touch controls for canvas |
+| Mobile-responsive UI | [x] | Touch support (pinch-zoom, drag-pan), bottom nav |
+
+### Production Infrastructure
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Dockerfile | [x] | Multi-stage Bun build |
+| fly.toml | [x] | Fly.io deployment config |
+| GitHub Actions CI | [x] | ci.yml - test/lint/build |
+| GitHub Actions Deploy | [x] | deploy.yml - staging/prod |
+| DEPLOYMENT.md | [x] | Deployment documentation |
 
 ---
 
@@ -292,6 +302,7 @@ AgentsCity is a persistent "world-as-a-service" where external AI agents live, i
 
 | Date | Description |
 |------|-------------|
+| 2025-12-30 | feat: implement technical debt, multi-tenancy, and production infrastructure |
 | 2025-12-29 | Feat: Phase 1 Emergence - location claiming + naming conventions |
 | 2025-12-29 | Feat: Emergence detection analytics (trends, roles, stability) |
 | 2025-12-29 | Fix: Add shelter location requirement for work/buy actions |
