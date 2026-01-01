@@ -86,3 +86,23 @@ export { ExternalAgentAdapter, createExternalAgentAdapter } from './adapters/ext
 
 // Export scientific experiment decision generators
 export { getRandomWalkDecision, getRandomExplorerDecision } from './random-walk';
+
+// Export Lizard Brain (heuristic decision system)
+export {
+  tryLizardBrain,
+  wouldUseLizardBrain,
+  recordLizardBrain,
+  recordWizardBrain,
+  getLizardBrainStats,
+  resetLizardBrainStats,
+} from './lizard-brain';
+
+// Export Decision Cache
+export {
+  getCachedDecision,
+  cacheDecision,
+  clearCache,
+  getCacheStats,
+  resetCacheStats,
+  isCacheEnabled,
+} from './decision-cache';

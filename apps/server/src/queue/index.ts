@@ -8,6 +8,7 @@ import { Queue, Worker, Job, QueueEvents } from 'bullmq';
 import Redis from 'ioredis';
 import { getAdapter, type AgentObservation, type AgentDecision, type LLMType } from '../llm';
 import { getFallbackDecision } from '../llm/response-parser';
+import { getCachedDecision, cacheDecision, getCacheStats } from '../llm/decision-cache';
 import { isTestMode } from '../config';
 import {
   startJobSpan,
@@ -132,6 +133,24 @@ export function startWorker(): void {
           };
         }
 
+        // CACHE CHECK: Try to get cached decision
+        const cachedDecision = await getCachedDecision(observation);
+        if (cachedDecision) {
+          logger.info(`CACHE HIT: ${agentId} (${llmType})`);
+          span.setAttribute('job.cache_hit', true);
+          span.setAttribute('job.used_fallback', false);
+          span.setAttribute('job.decision_action', cachedDecision.action);
+          markSpanSuccess(span);
+          span.end();
+          return {
+            agentId,
+            tick,
+            decision: cachedDecision,
+            processingTimeMs: Date.now() - startTime,
+            usedFallback: false,
+          };
+        }
+
         // Get adapter
         const adapter = getAdapter(llmType);
         if (!adapter) {
@@ -158,13 +177,17 @@ export function startWorker(): void {
           };
         }
 
-        // Get decision
+        // Get decision from LLM
         const decision = await adapter.decide(observation);
+
+        // Cache the decision for future similar observations
+        await cacheDecision(observation, decision);
 
         const processingTimeMs = Date.now() - startTime;
         span.setAttribute('job.processing_time_ms', processingTimeMs);
         span.setAttribute('job.decision_action', decision.action);
         span.setAttribute('job.used_fallback', false);
+        span.setAttribute('job.cache_hit', false);
         markSpanSuccess(span);
         span.end();
 
