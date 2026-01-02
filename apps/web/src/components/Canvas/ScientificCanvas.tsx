@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useWorldStore, useAgents, useResourceSpawns, useShelters, type BiomeType, BIOME_COLORS } from '../../stores/world';
+import { HeatmapLayer, HeatmapControls } from './HeatmapLayer';
 
 // Grid configuration
 const TILE_SIZE = 12; // Pixels per tile
@@ -542,6 +543,18 @@ export function ScientificCanvas() {
     setZoom(1);
   }, []);
 
+  // Track canvas dimensions for heatmap
+  const [canvasDimensions, setCanvasDimensions] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (canvasRef.current) {
+      setCanvasDimensions({
+        width: canvasRef.current.width,
+        height: canvasRef.current.height,
+      });
+    }
+  }, [canvasRef.current?.width, canvasRef.current?.height]);
+
   return (
     <div
       ref={containerRef}
@@ -562,6 +575,19 @@ export function ScientificCanvas() {
         onTouchEnd={handleTouchEndWithTap}
         onTouchCancel={handleTouchEnd}
       />
+
+      {/* Heatmap overlay layer */}
+      <HeatmapLayer
+        camera={camera}
+        zoom={zoom}
+        width={canvasDimensions.width}
+        height={canvasDimensions.height}
+      />
+
+      {/* Heatmap controls - top left */}
+      <div className="absolute top-4 left-4 hidden md:block" style={{ zIndex: 15 }}>
+        <HeatmapControls />
+      </div>
 
       {/* Controls - responsive positioning and sizing */}
       <div className="absolute bottom-4 right-4 flex flex-col gap-2 md:bottom-4 md:right-4" style={{ zIndex: 10 }}>

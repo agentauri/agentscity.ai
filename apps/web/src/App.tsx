@@ -22,12 +22,13 @@ import { AgentProfile } from './components/AgentProfile';
 import { WorldStats } from './components/WorldStats';
 import { AgentSummaryTable } from './components/AgentSummaryTable';
 import { DecisionLog } from './components/DecisionLog';
-import { ModeControls, ViewToggle } from './components/Controls';
+import { ModeControls, ViewToggle, EventFilters } from './components/Controls';
 import { MobileNav, type MobileView } from './components/MobileNav';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { ReplayPage } from './pages/ReplayPage';
 import { useReplayStore } from './stores/replay';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { SocialGraphView, SocialGraphButton } from './components/SocialGraph';
 
 export default function App() {
   const { status, connect, disconnect } = useSSE();
@@ -210,6 +211,11 @@ export default function App() {
           <ViewToggle />
         </div>
 
+        {/* Social Graph button (only in simulation mode) */}
+        {mode === 'simulation' && (
+          <SocialGraphButton />
+        )}
+
         {/* Replay button (only in simulation mode) */}
         {mode === 'simulation' && (
           <button
@@ -311,6 +317,9 @@ export default function App() {
 
   return (
     <>
+      {/* Social Graph Overlay */}
+      <SocialGraphView />
+
       {/* Desktop layout */}
       <div className="hidden md:block h-screen">
         <Layout
@@ -355,9 +364,18 @@ export default function App() {
             )
           }
           feed={
-            <ErrorBoundary sectionName="Event Feed" onError={handleError} compact>
-              <EventFeed />
-            </ErrorBoundary>
+            <div className="flex flex-col h-full">
+              {/* Event Filters */}
+              <div className="shrink-0 p-2 border-b border-city-border/50">
+                <EventFilters />
+              </div>
+              {/* Event Feed */}
+              <div className="flex-1 overflow-hidden">
+                <ErrorBoundary sectionName="Event Feed" onError={handleError} compact>
+                  <EventFeed />
+                </ErrorBoundary>
+              </div>
+            </div>
           }
         >
           {/* Canvas with error boundary - switches based on view mode */}
