@@ -1,0 +1,86 @@
+# LLM Model Comparison Experiment
+# Compares different LLM models in identical conditions
+
+name: "LLM Model Behavioral Comparison"
+description: |
+  Isolates each LLM type to measure model-specific behaviors.
+  Each variant runs with 6 agents of a single LLM type.
+
+hypothesis: |
+  Different LLM models will exhibit distinct behavioral patterns,
+  with some showing more cooperative tendencies and others more
+  competitive or exploitative strategies.
+
+seed: 12345
+
+world:
+  size: [100, 100]
+  scarcityMultiplier: 1.0
+
+resources:
+  food:
+    clusters: 6
+    maxAmount: 20
+    regenRate: 1.0
+  energy:
+    clusters: 5
+    maxAmount: 15
+    regenRate: 0.6
+  material:
+    clusters: 4
+    maxAmount: 25
+    regenRate: 0.3
+
+shelters: 10
+duration: 150
+
+metrics:
+  - survivalRate
+  - giniCoefficient
+  - cooperationIndex
+  - tradeCount
+  - conflictCount
+  - avgWealth
+  - avgHealth
+
+mode: llm
+
+variants:
+  - name: "Claude Only"
+    description: "6 Claude agents"
+    overrides:
+      agents:
+        - type: claude
+          count: 6
+          color: "#ef4444"
+
+  - name: "Gemini Only"
+    description: "6 Gemini agents"
+    overrides:
+      agents:
+        - type: gemini
+          count: 6
+          color: "#10b981"
+
+  - name: "Codex Only"
+    description: "6 OpenAI Codex agents"
+    overrides:
+      agents:
+        - type: codex
+          count: 6
+          color: "#3b82f6"
+
+  - name: "DeepSeek Only"
+    description: "6 DeepSeek agents"
+    overrides:
+      agents:
+        - type: deepseek
+          count: 6
+          color: "#f59e0b"
+
+  - name: "Mixed (Control)"
+    description: "Mixed LLM types as control group"
+    overrides:
+      agents:
+        - type: mixed
+          count: 6

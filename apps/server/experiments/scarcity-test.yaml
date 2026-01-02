@@ -1,0 +1,73 @@
+# Scarcity Test Experiment
+# Tests how agents behave under resource scarcity conditions
+
+name: "Resource Scarcity Comparison"
+description: |
+  Compares agent behavior under normal vs scarce resource conditions.
+  Measures survival rates, cooperation, and economic inequality.
+
+hypothesis: |
+  Under scarcity, agents will show higher conflict rates but also
+  develop more sophisticated cooperation strategies for survival.
+
+seed: 42424
+
+world:
+  size: [100, 100]
+  biomes:
+    forest: 0.25
+    desert: 0.25
+    tundra: 0.25
+    plains: 0.25
+
+agents:
+  - type: mixed
+    count: 7
+    startArea:
+      x: [25, 75]
+      y: [25, 75]
+
+resources:
+  food:
+    clusters: 5
+    maxAmount: 15
+    regenRate: 0.8
+  energy:
+    clusters: 4
+    maxAmount: 12
+    regenRate: 0.5
+  material:
+    clusters: 3
+    maxAmount: 20
+    regenRate: 0.2
+
+shelters: 8
+duration: 200
+
+metrics:
+  - survivalRate
+  - giniCoefficient
+  - cooperationIndex
+  - tradeCount
+  - conflictCount
+
+mode: llm
+
+variants:
+  - name: "Normal Resources"
+    description: "Baseline with normal resource availability"
+    overrides:
+      world:
+        scarcityMultiplier: 1.0
+
+  - name: "Moderate Scarcity"
+    description: "50% reduction in resource availability"
+    overrides:
+      world:
+        scarcityMultiplier: 0.5
+
+  - name: "Extreme Scarcity"
+    description: "80% reduction in resource availability"
+    overrides:
+      world:
+        scarcityMultiplier: 0.2

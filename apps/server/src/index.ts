@@ -110,6 +110,7 @@ import { registerLLMCacheRoutes } from './routes/llm-cache';
 
 // Scientific Experiments routes
 import { registerExperimentRoutes } from './routes/experiments-api';
+import { registerScenarioRoutes } from './routes/scenarios-api';
 
 // =============================================================================
 // Server Setup
@@ -304,6 +305,9 @@ await registerLLMCacheRoutes(server);
 
 // Register Scientific Experiments routes (seed, start, results, export)
 await registerExperimentRoutes(server);
+
+// Register Scenario Injection routes (shock, disaster, abundance, rules)
+await registerScenarioRoutes(server);
 
 // =============================================================================
 // Health & Status Routes
