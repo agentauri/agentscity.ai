@@ -16,6 +16,11 @@ import {
   getFallbackDecision,
   getRandomWalkDecision,
 } from '../llm';
+import {
+  isBaselineAgent,
+  getBaselineDecision,
+  recordBaselineDecision,
+} from './baselines';
 import { queueDecisions, waitForDecisions, type DecisionJobResult, type DecisionJobData } from '../queue';
 import { tickEngine } from '../simulation/tick-engine';
 import { buildObservation, formatEvent } from './observer';
@@ -134,8 +139,9 @@ export async function processAgentsTick(tick: number): Promise<AgentTickResult[]
     })
   );
 
-  // Separate external agents with webhooks from regular agents
+  // Separate agents into categories: external with webhooks, baseline, and regular LLM
   const externalWithWebhooks: Array<{ agent: Agent; observation: AgentObservation; endpoint: string }> = [];
+  const baselineAgents: Array<{ agent: Agent; observation: AgentObservation }> = [];
   const regularAgents: Array<{ agent: Agent; observation: AgentObservation }> = [];
 
   for (const { agent, observation } of agentObservations) {
@@ -148,6 +154,9 @@ export async function processAgentsTick(tick: number): Promise<AgentTickResult[]
         // External agent without webhook (poll mode) - skip, they submit via API
         console.log(`[Orchestrator] External agent ${agent.id} in poll mode, skipping`);
       }
+    } else if (isBaselineAgent(agent.llmType)) {
+      // Baseline agents use heuristic decisions, not LLM
+      baselineAgents.push({ agent, observation });
     } else {
       regularAgents.push({ agent, observation });
     }
@@ -155,6 +164,40 @@ export async function processAgentsTick(tick: number): Promise<AgentTickResult[]
 
   // Process external agents with webhooks directly (parallel)
   const externalDecisions = await processExternalAgents(externalWithWebhooks, tick);
+
+  // Process baseline agents (no LLM calls, instant decisions)
+  const baselineDecisions: DecisionJobResult[] = baselineAgents.map(({ agent, observation }) => {
+    const startTime = Date.now();
+    const decision = getBaselineDecision(agent.llmType, observation);
+
+    // Record for statistics
+    recordBaselineDecision(agent.llmType);
+
+    if (!decision) {
+      // Fallback if baseline agent somehow fails
+      console.warn(`[Orchestrator] Baseline agent ${agent.llmType} failed to generate decision, using fallback`);
+      return {
+        agentId: agent.id,
+        tick,
+        decision: createFallbackDecision(observation),
+        processingTimeMs: Date.now() - startTime,
+        usedFallback: true,
+      };
+    }
+
+    console.log(`[Orchestrator] Baseline ${agent.llmType} decision: ${decision.action}`);
+    return {
+      agentId: agent.id,
+      tick,
+      decision,
+      processingTimeMs: Date.now() - startTime,
+      usedFallback: false, // Not a fallback - this is the expected behavior
+    };
+  });
+
+  if (baselineAgents.length > 0) {
+    console.log(`[Orchestrator] Processed ${baselineAgents.length} baseline agents`);
+  }
 
   // Check for experiment mode overrides
   const experimentContext = tickEngine.getExperimentContext();
@@ -197,8 +240,8 @@ export async function processAgentsTick(tick: number): Promise<AgentTickResult[]
     queuedDecisionResults = await waitForDecisions(queuedJobs, 30000);
   }
 
-  // Combine all decision results
-  const decisionResults = [...externalDecisions, ...queuedDecisionResults];
+  // Combine all decision results (external, baseline, and regular LLM)
+  const decisionResults = [...externalDecisions, ...baselineDecisions, ...queuedDecisionResults];
 
   // Execute actions for each decision
   const results: AgentTickResult[] = [];

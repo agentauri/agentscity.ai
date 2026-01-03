@@ -9,6 +9,10 @@
  * A/B Testing Support:
  * - Parametric spawning with custom agent/resource configurations
  * - Reproducible worlds via optional seed
+ *
+ * Phase 5: Personality Diversification
+ * - Agents can be assigned personality traits (aggressive, cooperative, etc.)
+ * - 40% neutral (control group) for scientific comparison
  */
 
 import { v4 as uuid } from 'uuid';
@@ -25,6 +29,12 @@ import { addToInventory, deleteAllInventory } from '../db/queries/inventory';
 import type { NewAgent, NewShelter, NewResourceSpawn } from '../db/schema';
 import type { LLMType } from '../llm/types';
 import { CONFIG } from '../config';
+import {
+  selectRandomPersonality,
+  getPersonalityConfig,
+  isPersonalityEnabled,
+  type PersonalityTrait,
+} from './personalities';
 
 // =============================================================================
 // Agent Configurations
@@ -36,6 +46,8 @@ export interface AgentConfig {
   color: string;
   startX: number;
   startY: number;
+  /** Optional personality override (if not set, assigned randomly when enabled) */
+  personality?: PersonalityTrait;
 }
 
 const AGENT_CONFIGS: AgentConfig[] = [
@@ -46,6 +58,26 @@ const AGENT_CONFIGS: AgentConfig[] = [
   { llmType: 'qwen', name: 'Qwen', color: '#8b5cf6', startX: 30, startY: 22 },
   { llmType: 'glm', name: 'GLM', color: '#ec4899', startX: 32, startY: 22 },
   { llmType: 'grok', name: 'Grok', color: '#1d4ed8', startX: 30, startY: 24 },
+];
+
+// =============================================================================
+// Baseline Agent Configurations (Scientific Comparison)
+// =============================================================================
+
+/**
+ * Baseline agents for scientific comparison experiments.
+ * These agents do not use LLM calls - they use heuristic or random decisions.
+ *
+ * - baseline_random: Pure random action selection (null hypothesis)
+ * - baseline_rule: Simple if-then-else heuristics (reactive intelligence)
+ * - baseline_sugarscape: Classic Sugarscape agent behavior (resource competition)
+ *
+ * Gray color scheme to visually distinguish from LLM agents.
+ */
+const BASELINE_AGENT_CONFIGS: AgentConfig[] = [
+  { llmType: 'baseline_random', name: 'Random-1', color: '#9ca3af', startX: 40, startY: 20 },
+  { llmType: 'baseline_rule', name: 'Rule-1', color: '#6b7280', startX: 40, startY: 22 },
+  { llmType: 'baseline_sugarscape', name: 'Sugar-1', color: '#4b5563', startX: 40, startY: 24 },
 ];
 
 // =============================================================================
@@ -184,6 +216,32 @@ const SHELTER_CONFIGS: ShelterConfig[] = [
 ];
 
 // =============================================================================
+// Personality Assignment
+// =============================================================================
+
+/**
+ * Assign a personality to an agent.
+ * Uses explicit personality from config if provided, otherwise randomly selects.
+ * Returns null if personalities are disabled.
+ */
+function assignPersonality(agentConfig: AgentConfig, agentIndex: number): PersonalityTrait | null {
+  // Check if personalities are enabled
+  if (!isPersonalityEnabled()) {
+    return null;
+  }
+
+  // Use explicit personality if provided in config
+  if (agentConfig.personality) {
+    return agentConfig.personality;
+  }
+
+  // Use agent index as seed for reproducibility within a spawn run
+  // This ensures the same agents get the same personalities when respawning
+  const seed = CONFIG.simulation.randomSeed + agentIndex;
+  return selectRandomPersonality(seed);
+}
+
+// =============================================================================
 // Spawning Functions
 // =============================================================================
 
@@ -268,12 +326,50 @@ export async function spawnInitialAgents(): Promise<void> {
     return;
   }
 
-  console.log('[Spawner] Spawning 7 MVP agents...');
-
   // Scarcity mode: reduced starting resources to encourage emergent behavior
   const startingFood = 1; // Reduced from 3 to create urgency
 
-  for (const agentConfig of AGENT_CONFIGS) {
+  // Determine which agents to spawn
+  const agentsToSpawn: AgentConfig[] = [...AGENT_CONFIGS];
+
+  // Conditionally include baseline agents based on configuration
+  if (CONFIG.experiment.includeBaselineAgents) {
+    const count = CONFIG.experiment.baselineAgentCount;
+    console.log(`[Spawner] Including ${count} of each baseline agent type for scientific comparison`);
+
+    // Add the configured number of each baseline type
+    for (let i = 0; i < count; i++) {
+      for (const baselineConfig of BASELINE_AGENT_CONFIGS) {
+        // Offset position slightly for multiple instances
+        agentsToSpawn.push({
+          ...baselineConfig,
+          name: count > 1 ? `${baselineConfig.name.split('-')[0]}-${i + 1}` : baselineConfig.name,
+          startX: baselineConfig.startX + i * 2,
+          startY: baselineConfig.startY,
+        });
+      }
+    }
+  }
+
+  // Log personality distribution if enabled
+  if (isPersonalityEnabled()) {
+    console.log('[Spawner] Personality diversification ENABLED');
+  }
+
+  console.log(`[Spawner] Spawning ${agentsToSpawn.length} agents (${AGENT_CONFIGS.length} LLM + ${agentsToSpawn.length - AGENT_CONFIGS.length} baseline)...`);
+
+  // Track personality distribution for logging
+  const personalityCounts: Record<string, number> = {};
+
+  for (let i = 0; i < agentsToSpawn.length; i++) {
+    const agentConfig = agentsToSpawn[i];
+
+    // Assign personality
+    const personality = assignPersonality(agentConfig, i);
+    if (personality) {
+      personalityCounts[personality] = (personalityCounts[personality] || 0) + 1;
+    }
+
     const agent: NewAgent = {
       id: uuid(),
       llmType: agentConfig.llmType,
@@ -285,6 +381,7 @@ export async function spawnInitialAgents(): Promise<void> {
       balance: CONFIG.agent.startingBalance,
       state: 'idle',
       color: agentConfig.color,
+      personality: personality,
     };
 
     await createAgent(agent);
@@ -292,7 +389,15 @@ export async function spawnInitialAgents(): Promise<void> {
     // Give starting inventory (reduced for scarcity)
     await addToInventory(agent.id, 'food', startingFood);
 
-    console.log(`  ✅ ${agentConfig.name} (${agentConfig.llmType}) spawned at (${agentConfig.startX}, ${agentConfig.startY}) with ${startingFood} food`);
+    const isBaseline = agentConfig.llmType.startsWith('baseline_');
+    const icon = isBaseline ? '  [B]' : '  ✅';
+    const personalityLabel = personality ? ` [${personality}]` : '';
+    console.log(`${icon} ${agentConfig.name} (${agentConfig.llmType})${personalityLabel} spawned at (${agentConfig.startX}, ${agentConfig.startY}) with ${startingFood} food`);
+  }
+
+  // Log personality distribution summary
+  if (Object.keys(personalityCounts).length > 0) {
+    console.log('[Spawner] Personality distribution:', personalityCounts);
   }
 
   console.log('[Spawner] All agents spawned');
@@ -352,6 +457,12 @@ export interface SpawnConfiguration {
   shelters?: ShelterConfig[];
   seed?: number;
   startingFood?: number;
+  /** Include baseline agents (overrides CONFIG.experiment.includeBaselineAgents) */
+  includeBaselineAgents?: boolean;
+  /** Number of each baseline type (overrides CONFIG.experiment.baselineAgentCount) */
+  baselineAgentCount?: number;
+  /** Enable personalities for this spawn (overrides CONFIG.experiment.enablePersonalities) */
+  enablePersonalities?: boolean;
 }
 
 /**
@@ -363,7 +474,18 @@ export function getDefaultConfigurations(): SpawnConfiguration {
     resourceSpawns: [...RESOURCE_SPAWN_CONFIGS],
     shelters: [...SHELTER_CONFIGS],
     startingFood: 1,
+    includeBaselineAgents: CONFIG.experiment.includeBaselineAgents,
+    baselineAgentCount: CONFIG.experiment.baselineAgentCount,
+    enablePersonalities: CONFIG.experiment.enablePersonalities,
   };
+}
+
+/**
+ * Get baseline agent configurations.
+ * Useful for A/B testing to manually include baseline agents.
+ */
+export function getBaselineAgentConfigs(): AgentConfig[] {
+  return [...BASELINE_AGENT_CONFIGS];
 }
 
 /**
@@ -386,10 +508,38 @@ export async function clearWorld(): Promise<void> {
  * Spawn world with custom configuration (for A/B testing)
  */
 export async function spawnWorldWithConfig(config?: SpawnConfiguration): Promise<void> {
-  const agents = config?.agents ?? AGENT_CONFIGS;
+  let agents = config?.agents ?? AGENT_CONFIGS;
   const resourceSpawns = config?.resourceSpawns ?? RESOURCE_SPAWN_CONFIGS;
   const shelters = config?.shelters ?? SHELTER_CONFIGS;
   const startingFood = config?.startingFood ?? 1;
+
+  // Handle baseline agents
+  const includeBaseline = config?.includeBaselineAgents ?? CONFIG.experiment.includeBaselineAgents;
+  const baselineCount = config?.baselineAgentCount ?? CONFIG.experiment.baselineAgentCount;
+
+  // Handle personality override
+  const enablePersonalities = config?.enablePersonalities ?? isPersonalityEnabled();
+
+  if (includeBaseline) {
+    // Add baseline agents to the spawn list
+    const baselineAgentsToAdd: AgentConfig[] = [];
+    for (let i = 0; i < baselineCount; i++) {
+      for (const baselineConfig of BASELINE_AGENT_CONFIGS) {
+        baselineAgentsToAdd.push({
+          ...baselineConfig,
+          name: baselineCount > 1 ? `${baselineConfig.name.split('-')[0]}-${i + 1}` : baselineConfig.name,
+          startX: baselineConfig.startX + i * 2,
+          startY: baselineConfig.startY,
+        });
+      }
+    }
+    agents = [...agents, ...baselineAgentsToAdd];
+    console.log(`[Spawner] Including ${baselineAgentsToAdd.length} baseline agents`);
+  }
+
+  if (enablePersonalities) {
+    console.log('[Spawner] Personality diversification ENABLED for this spawn');
+  }
 
   console.log(`[Spawner] Spawning world with custom config: ${agents.length} agents, ${resourceSpawns.length} resources, ${shelters.length} shelters`);
 
@@ -429,8 +579,27 @@ export async function spawnWorldWithConfig(config?: SpawnConfiguration): Promise
   }
   console.log(`  ✅ ${shelters.length} shelters created`);
 
+  // Track personality distribution for logging
+  const personalityCounts: Record<string, number> = {};
+
   // Spawn agents
-  for (const agentConfig of agents) {
+  for (let i = 0; i < agents.length; i++) {
+    const agentConfig = agents[i];
+
+    // Assign personality if enabled (for this spawn)
+    let personality: PersonalityTrait | null = null;
+    if (enablePersonalities) {
+      if (agentConfig.personality) {
+        personality = agentConfig.personality;
+      } else {
+        const seed = (config?.seed ?? CONFIG.simulation.randomSeed) + i;
+        personality = selectRandomPersonality(seed);
+      }
+      if (personality) {
+        personalityCounts[personality] = (personalityCounts[personality] || 0) + 1;
+      }
+    }
+
     const agent: NewAgent = {
       id: uuid(),
       llmType: agentConfig.llmType,
@@ -442,12 +611,21 @@ export async function spawnWorldWithConfig(config?: SpawnConfiguration): Promise
       balance: CONFIG.agent.startingBalance,
       state: 'idle',
       color: agentConfig.color,
+      personality: personality,
     };
 
     await createAgent(agent);
     await addToInventory(agent.id, 'food', startingFood);
 
-    console.log(`  ✅ ${agentConfig.name} (${agentConfig.llmType}) spawned`);
+    const isBaseline = agentConfig.llmType.startsWith('baseline_');
+    const icon = isBaseline ? '  [B]' : '  ✅';
+    const personalityLabel = personality ? ` [${personality}]` : '';
+    console.log(`${icon} ${agentConfig.name} (${agentConfig.llmType})${personalityLabel} spawned`);
+  }
+
+  // Log personality distribution summary
+  if (Object.keys(personalityCounts).length > 0) {
+    console.log('[Spawner] Personality distribution:', personalityCounts);
   }
 
   console.log('[Spawner] World spawned with custom configuration');

@@ -3,10 +3,14 @@
  *
  * Manages agent episodic memories and relationships.
  * These are stored locally (not emergent) but contribute to emergent behavior.
+ *
+ * RAG-lite Memory System (Phase 5):
+ * - Contextual memory retrieval based on nearby agents, location, and importance
+ * - Enables long-term reputation/vendetta formation
  */
 
 import { v4 as uuid } from 'uuid';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lte, or } from 'drizzle-orm';
 import { db, agentMemories, agentRelationships } from '../index';
 import type { AgentMemory, NewAgentMemory, AgentRelationship } from '../schema';
 import { CONFIG } from '../../config';
@@ -143,6 +147,170 @@ export async function pruneOldMemories(
   }
 
   return memoriestoDelete.length;
+}
+
+// =============================================================================
+// RAG-lite Memory Queries (Phase 5)
+// =============================================================================
+
+/**
+ * Get memories about a specific agent (for when encountering them)
+ * Retrieves memories where the target agent was involved, ordered by importance and recency.
+ * Enables vendetta/reputation tracking across time.
+ */
+export async function getMemoriesAboutAgent(
+  agentId: string,
+  aboutAgentId: string,
+  limit: number = 5
+): Promise<AgentMemory[]> {
+  return db
+    .select()
+    .from(agentMemories)
+    .where(
+      and(
+        eq(agentMemories.agentId, agentId),
+        sql`${agentMemories.involvedAgentIds} @> ${JSON.stringify([aboutAgentId])}`
+      )
+    )
+    .orderBy(desc(agentMemories.importance), desc(agentMemories.tick))
+    .limit(limit);
+}
+
+/**
+ * Get memories at/near a specific location
+ * Retrieves memories that occurred within a radius of the given position.
+ * Helps agents remember what happened at locations they visit.
+ */
+export async function getMemoriesAtLocation(
+  agentId: string,
+  x: number,
+  y: number,
+  radius: number = 3,
+  limit: number = 5
+): Promise<AgentMemory[]> {
+  // Query for memories within the bounding box
+  return db
+    .select()
+    .from(agentMemories)
+    .where(
+      and(
+        eq(agentMemories.agentId, agentId),
+        sql`${agentMemories.x} IS NOT NULL`,
+        sql`${agentMemories.y} IS NOT NULL`,
+        gte(agentMemories.x, x - radius),
+        lte(agentMemories.x, x + radius),
+        gte(agentMemories.y, y - radius),
+        lte(agentMemories.y, y + radius)
+      )
+    )
+    .orderBy(desc(agentMemories.importance), desc(agentMemories.tick))
+    .limit(limit);
+}
+
+/**
+ * Get most important memories (regardless of recency)
+ * Retrieves the highest-importance memories for an agent.
+ * Enables long-term significant events to persist in agent memory.
+ */
+export async function getMostImportantMemories(
+  agentId: string,
+  limit: number = 5
+): Promise<AgentMemory[]> {
+  return db
+    .select()
+    .from(agentMemories)
+    .where(eq(agentMemories.agentId, agentId))
+    .orderBy(desc(agentMemories.importance), desc(agentMemories.tick))
+    .limit(limit);
+}
+
+/**
+ * Get memories by emotional valence (positive or negative experiences)
+ * Retrieves memories above or below a valence threshold.
+ * Enables agents to recall traumatic or positive experiences.
+ *
+ * @param valenceThreshold - Positive value (e.g., 0.5) for positive memories,
+ *                          negative value (e.g., -0.5) for negative memories
+ */
+export async function getEmotionalMemories(
+  agentId: string,
+  valenceThreshold: number,
+  limit: number = 5
+): Promise<AgentMemory[]> {
+  const condition = valenceThreshold >= 0
+    ? gte(agentMemories.emotionalValence, valenceThreshold)
+    : lte(agentMemories.emotionalValence, valenceThreshold);
+
+  return db
+    .select()
+    .from(agentMemories)
+    .where(
+      and(
+        eq(agentMemories.agentId, agentId),
+        condition
+      )
+    )
+    .orderBy(
+      // Sort by absolute emotional intensity first, then recency
+      valenceThreshold >= 0
+        ? desc(agentMemories.emotionalValence)
+        : agentMemories.emotionalValence,
+      desc(agentMemories.tick)
+    )
+    .limit(limit);
+}
+
+/**
+ * Get memories about multiple agents at once (batch query for efficiency)
+ * Used when multiple agents are nearby and we need memories about all of them.
+ */
+export async function getMemoriesAboutAgents(
+  agentId: string,
+  aboutAgentIds: string[],
+  limitPerAgent: number = 3
+): Promise<Map<string, AgentMemory[]>> {
+  if (aboutAgentIds.length === 0) {
+    return new Map();
+  }
+
+  // Query all memories involving any of the target agents
+  const allMemories = await db
+    .select()
+    .from(agentMemories)
+    .where(
+      and(
+        eq(agentMemories.agentId, agentId),
+        or(
+          ...aboutAgentIds.map(targetId =>
+            sql`${agentMemories.involvedAgentIds} @> ${JSON.stringify([targetId])}`
+          )
+        )
+      )
+    )
+    .orderBy(desc(agentMemories.importance), desc(agentMemories.tick))
+    .limit(aboutAgentIds.length * limitPerAgent * 2); // Fetch extra to ensure coverage
+
+  // Group memories by involved agent
+  const memoriesByAgent = new Map<string, AgentMemory[]>();
+
+  for (const targetId of aboutAgentIds) {
+    memoriesByAgent.set(targetId, []);
+  }
+
+  for (const memory of allMemories) {
+    const involvedIds = memory.involvedAgentIds as string[];
+    for (const targetId of aboutAgentIds) {
+      if (involvedIds.includes(targetId)) {
+        const existing = memoriesByAgent.get(targetId) || [];
+        if (existing.length < limitPerAgent) {
+          existing.push(memory);
+          memoriesByAgent.set(targetId, existing);
+        }
+      }
+    }
+  }
+
+  return memoriesByAgent;
 }
 
 // =============================================================================

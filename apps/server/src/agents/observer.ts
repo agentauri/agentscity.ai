@@ -3,6 +3,7 @@
  *
  * Scientific Model: includes resource spawns and shelters
  * Phase 1: includes memories and relationships
+ * Phase 5: includes personality trait in self observation
  */
 
 import type { Agent, Shelter, ResourceSpawn } from '../db/schema';
@@ -29,6 +30,8 @@ import { getKnownAgentsForObserver, type SharedInfo } from '../db/queries/knowle
 import { getNearbyClaims } from '../db/queries/claims';
 import { getNearbyNamedLocations, getLocationNamesForObserver } from '../db/queries/naming';
 import { CONFIG } from '../config';
+import { isBlackoutActive } from '../simulation/shocks';
+import { isPersonalityEnabled, isValidPersonality, type PersonalityTrait } from './personalities';
 
 const VISIBILITY_RADIUS = CONFIG.simulation.visibilityRadius;
 
@@ -58,6 +61,14 @@ export async function buildObservation(
   allShelters: Shelter[],
   recentEvents: RecentEvent[] = []
 ): Promise<AgentObservation> {
+  // Parse personality from agent (may be stored as string in DB)
+  let personality: PersonalityTrait | null = null;
+  if (isPersonalityEnabled() && agent.personality) {
+    if (isValidPersonality(agent.personality)) {
+      personality = agent.personality as PersonalityTrait;
+    }
+  }
+
   // Self data
   const self = {
     id: agent.id,
@@ -68,21 +79,28 @@ export async function buildObservation(
     health: agent.health,
     balance: agent.balance,
     state: agent.state,
+    // Include personality in observation (Phase 5)
+    personality,
   };
 
   // Nearby agents (within visibility radius, excluding self)
-  const visibleAgents = getVisibleAgents(
-    allAgents.filter((a) => a.id !== agent.id),
-    { x: agent.x, y: agent.y },
-    VISIBILITY_RADIUS
-  );
+  // During communication blackout, agents cannot see other agents
+  let nearbyAgents: NearbyAgent[] = [];
 
-  const nearbyAgents: NearbyAgent[] = visibleAgents.map((a) => ({
-    id: a.id,
-    x: a.x,
-    y: a.y,
-    state: a.state,
-  }));
+  if (!isBlackoutActive(tick)) {
+    const visibleAgents = getVisibleAgents(
+      allAgents.filter((a) => a.id !== agent.id),
+      { x: agent.x, y: agent.y },
+      VISIBILITY_RADIUS
+    );
+
+    nearbyAgents = visibleAgents.map((a) => ({
+      id: a.id,
+      x: a.x,
+      y: a.y,
+      state: a.state,
+    }));
+  }
 
   // Nearby resource spawns
   const visibleSpawns = getVisibleItems(
@@ -264,7 +282,7 @@ export function formatEvent(event: { type: string; tick: number; payload: Record
       break;
     }
     case 'action_failed':
-      description = `⚠️ ACTION FAILED: ${event.payload.action} - ${event.payload.error}`;
+      description = `ACTION FAILED: ${event.payload.action} - ${event.payload.error}`;
       break;
     // Phase 1: Emergence events
     case 'location_claimed': {

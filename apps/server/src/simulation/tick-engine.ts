@@ -34,6 +34,7 @@ import { createAgent } from '../db/queries/agents';
 import { CONFIG } from '../config';
 import type { Agent, NewAgent } from '../db/schema';
 import { random, randomBelow, randomChoice, resetRNG } from '../utils/random';
+import { processScheduledShocks, type ShockResult } from './shocks';
 
 // Role update interval (every N ticks)
 const ROLE_UPDATE_INTERVAL = 20;
@@ -176,6 +177,18 @@ class TickEngine {
     };
     allEvents.push(tickStartEvent);
     await publishEvent(tickStartEvent);
+
+    // Process any scheduled shocks for this tick
+    try {
+      const shockResults = await processScheduledShocks(tick);
+      if (shockResults.length > 0) {
+        logger.info(`Applied ${shockResults.length} shock(s) at tick ${tick}`, {
+          shocks: shockResults.map((s) => ({ type: s.type, affected: s.affectedAgents.length })),
+        });
+      }
+    } catch (error) {
+      logger.error('Error processing shocks', error);
+    }
 
     // Get all alive agents
     const agents = await getAliveAgents();

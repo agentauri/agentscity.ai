@@ -59,6 +59,8 @@ export const CONFIG = {
     visibilityRadius: env('VISIBILITY_RADIUS', 10),
     /** Test mode: agents use fallback decisions instead of LLM calls */
     testMode: envString('TEST_MODE', 'false') === 'true',
+    /** Random seed for reproducible experiments (default: current timestamp) */
+    randomSeed: env('RANDOM_SEED', Date.now()),
   },
 
   // ---------------------------------------------------------------------------
@@ -314,7 +316,7 @@ export const CONFIG = {
   },
 
   // ---------------------------------------------------------------------------
-  // Memory (Phase 1)
+  // Memory (Phase 1 + Phase 5 RAG-lite)
   // ---------------------------------------------------------------------------
   memory: {
     /** Maximum memories stored per agent */
@@ -325,6 +327,27 @@ export const CONFIG = {
     importanceDecay: env('MEMORY_IMPORTANCE_DECAY', 0.01),
     /** Trust score decay per tick without interaction */
     trustDecayPerTick: env('TRUST_DECAY_PER_TICK', 0.1),
+
+    // Phase 5: RAG-lite Memory Retrieval
+    /**
+     * Enable RAG-lite contextual memory retrieval.
+     * When enabled, agents receive memories about:
+     * - Nearby agents (reputation/vendetta tracking)
+     * - Current location (spatial memory)
+     * - High-importance past events
+     * Default: false for backward compatibility
+     */
+    enableRAGRetrieval: envBool('ENABLE_RAG_MEMORY', false),
+    /** Maximum memories per nearby agent in RAG retrieval */
+    ragPerAgentLimit: env('RAG_PER_AGENT_LIMIT', 2),
+    /** Maximum location-relevant memories in RAG retrieval */
+    ragLocationLimit: env('RAG_LOCATION_LIMIT', 3),
+    /** Maximum important memories in RAG retrieval */
+    ragImportantLimit: env('RAG_IMPORTANT_LIMIT', 3),
+    /** Total maximum memories in RAG retrieval (to prevent context overflow) */
+    ragTotalLimit: env('RAG_TOTAL_LIMIT', 12),
+    /** Radius for location-based memory search */
+    ragLocationRadius: env('RAG_LOCATION_RADIUS', 3),
   },
 
   // ---------------------------------------------------------------------------
@@ -385,6 +408,66 @@ export const CONFIG = {
     defaultDurationTicks: env('EXPERIMENT_DEFAULT_DURATION', 100),
     /** Auto-pause between variants */
     pauseBetweenVariants: env('EXPERIMENT_PAUSE_BETWEEN', 1) === 1,
+
+    // -------------------------------------------------------------------------
+    // Phase 5: Personality Diversification
+    // -------------------------------------------------------------------------
+    /**
+     * Enable personality diversification for agents.
+     * When enabled, agents are assigned personality traits that subtly
+     * influence their decision-making (aggressive, cooperative, cautious, etc.)
+     * 40% of agents are 'neutral' (control group) for scientific comparison.
+     * Default: false for backward compatibility
+     */
+    enablePersonalities: envBool('ENABLE_PERSONALITIES', false),
+
+    // -------------------------------------------------------------------------
+    // Model Capability Normalization
+    // -------------------------------------------------------------------------
+    /** Enable capability normalization to reduce model differences */
+    normalizeCapabilities: envBool('NORMALIZE_CAPABILITIES', false),
+    /** Target max tokens when normalization is enabled */
+    normalizedTokenLimit: env('NORMALIZED_TOKEN_LIMIT', 2048),
+    /** Target latency in ms when normalization is enabled (adds delay to fast models) */
+    normalizedLatencyMs: env('NORMALIZED_LATENCY_MS', 1000),
+    /** Max context characters when normalization is enabled */
+    normalizedContextChars: env('NORMALIZED_CONTEXT_CHARS', 8000),
+
+    // -------------------------------------------------------------------------
+    // Synthetic Vocabulary (Priors Limiting)
+    // -------------------------------------------------------------------------
+    /** Use synthetic vocabulary to reduce LLM training priors influence */
+    useSyntheticVocabulary: envBool('USE_SYNTHETIC_VOCABULARY', false),
+
+    // -------------------------------------------------------------------------
+    // Safety Filter Ablation (Research)
+    // -------------------------------------------------------------------------
+    /**
+     * Safety level for prompts: 'standard' | 'minimal' | 'none'
+     * - standard: Default helpful/harmless framing
+     * - minimal: Remove helpfulness, keep harm warnings
+     * - none: Purely descriptive, no moral framing (RESEARCH ONLY)
+     */
+    safetyLevel: envString('SAFETY_LEVEL', 'standard') as 'standard' | 'minimal' | 'none',
+
+    // -------------------------------------------------------------------------
+    // Emergent Prompt System
+    // -------------------------------------------------------------------------
+    /**
+     * Use emergent prompt system instead of prescriptive prompts.
+     * Emergent prompts only provide world physics and sensory descriptions,
+     * allowing agents to discover survival strategies through experience.
+     * Default: false (use prescriptive prompts for backward compatibility)
+     */
+    useEmergentPrompt: envBool('USE_EMERGENT_PROMPT', false),
+
+    // -------------------------------------------------------------------------
+    // Baseline Agents (Scientific Comparison)
+    // -------------------------------------------------------------------------
+    /** Include baseline (non-LLM) agents for scientific comparison */
+    includeBaselineAgents: envBool('INCLUDE_BASELINE_AGENTS', false),
+    /** Number of each baseline agent type to include (1-3) */
+    baselineAgentCount: Math.min(3, Math.max(1, env('BASELINE_AGENT_COUNT', 1))),
   },
 
   // ---------------------------------------------------------------------------
@@ -412,6 +495,7 @@ export type NeedsConfig = typeof CONFIG.needs;
 export type QueueConfig = typeof CONFIG.queue;
 export type LLMConfig = typeof CONFIG.llm;
 export type LLMCacheConfig = typeof CONFIG.llm.cache;
+export type MemoryConfig = typeof CONFIG.memory;
 export type ExperimentConfig = typeof CONFIG.experiment;
 export type TelemetryConfig = typeof CONFIG.telemetry;
 
@@ -435,4 +519,29 @@ export function isTestMode(): boolean {
  */
 export function setTestMode(enabled: boolean): void {
   runtimeTestMode = enabled;
+}
+
+// =============================================================================
+// Runtime Emergent Prompt Mode
+// =============================================================================
+
+/** Runtime override for emergent prompt mode (null = use config value) */
+let runtimeEmergentPrompt: boolean | null = null;
+
+/**
+ * Check if emergent prompt mode is enabled.
+ * Emergent prompts use sensory descriptions and world physics only,
+ * without prescriptive survival strategies.
+ * Runtime toggle takes precedence over environment variable.
+ */
+export function isEmergentPromptEnabled(): boolean {
+  return runtimeEmergentPrompt ?? CONFIG.experiment.useEmergentPrompt;
+}
+
+/**
+ * Set emergent prompt mode at runtime (toggle without server restart).
+ * Useful for A/B testing between prescriptive and emergent prompts.
+ */
+export function setEmergentPromptMode(enabled: boolean): void {
+  runtimeEmergentPrompt = enabled;
 }

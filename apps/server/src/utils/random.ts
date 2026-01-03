@@ -32,6 +32,16 @@ export function initializeRNG(seed: string): void {
 }
 
 /**
+ * Set the RNG seed (alias for initializeRNG for convenience).
+ * Accepts either a string or number seed.
+ *
+ * @param seed - The seed for reproducibility (string or number)
+ */
+export function setSeed(seed: string | number): void {
+  initializeRNG(String(seed));
+}
+
+/**
  * Reset RNG to unseeded mode (uses Math.random behavior).
  * Useful for tests or when reproducibility is not needed.
  */

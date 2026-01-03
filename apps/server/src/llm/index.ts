@@ -78,8 +78,34 @@ export async function logAdapterStatus(): Promise<void> {
 
 // Export types and utilities
 export * from './types';
-export { buildFullPrompt, buildAvailableActions } from './prompt-builder';
+export { buildFullPrompt, buildFinalPrompt, buildAvailableActions, getActiveTransformations } from './prompt-builder';
 export { parseResponse, getFallbackDecision } from './response-parser';
+
+// Export Capability Normalization (for experiments)
+export {
+  MODEL_CAPABILITIES,
+  getNormalizationConfig,
+  normalizePrompt,
+  normalizeLatency,
+  getNormalizedMaxTokens,
+  getCapabilitySummary,
+  getLatencyStats,
+  resetLatencyStats,
+  type ModelCapabilities,
+  type NormalizationConfig,
+} from './capability-normalizer';
+
+// Export Synthetic Vocabulary (for experiments)
+export {
+  SYNTHETIC_VOCABULARY,
+  applySyntheticVocabulary,
+  reverseSyntheticVocabulary,
+  isSyntheticVocabularyEnabled,
+  getVocabularyByCategory,
+  getVocabularyStats,
+  generateVocabularyDocumentation,
+  type VocabularyMapping,
+} from './prompts/synthetic-vocabulary';
 
 // Export external agent adapter (Phase 3: A2A Protocol)
 export { ExternalAgentAdapter, createExternalAgentAdapter } from './adapters/external-api';

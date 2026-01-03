@@ -75,6 +75,8 @@ function normalizeObservation(obs: AgentObservation): Record<string, unknown> {
       x: obs.self.x,
       y: obs.self.y,
       state: obs.self.state,
+      // Phase 5: Include personality in cache key
+      personality: obs.self.personality ?? null,
     },
 
     // Inventory (sorted by type)
@@ -111,9 +113,6 @@ function normalizeObservation(obs: AgentObservation): Record<string, unknown> {
       const dist = Math.abs(a.x - obs.self.x) + Math.abs(a.y - obs.self.y);
       return dist <= 1;
     }) ?? false,
-
-    // LLM type affects the decision
-    llmType: obs.self.llmType,
   };
 }
 

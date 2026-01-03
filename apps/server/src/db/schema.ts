@@ -140,6 +140,10 @@ export const agents = pgTable('agents', {
   state: varchar('state', { length: 20 }).notNull().default('idle'), // idle, walking, working, sleeping, dead
   color: varchar('color', { length: 7 }).notNull().default('#888888'),
 
+  // Personality (Phase 5: Personality Diversification)
+  // Nullable for backward compatibility - null means 'neutral'
+  personality: text('personality'), // aggressive, cooperative, cautious, explorer, social, neutral
+
   // Metadata
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -149,6 +153,7 @@ export const agents = pgTable('agents', {
   index('agents_state_idx').on(table.state),
   index('agents_position_idx').on(table.x, table.y),
   index('agents_tenant_state_idx').on(table.tenantId, table.state),
+  index('agents_personality_idx').on(table.personality),
 ]);
 
 // =============================================================================

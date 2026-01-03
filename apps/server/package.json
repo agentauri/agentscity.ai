@@ -8,7 +8,9 @@
     "build": "bun build src/index.ts --outdir dist --target bun",
     "start": "bun run dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "ensemble": "bun run src/scripts/run-ensemble.ts",
+    "seed-experiments": "bun run src/scripts/seed-experiments.ts"
   },
   "dependencies": {
     "@agentscity/shared": "workspace:*",

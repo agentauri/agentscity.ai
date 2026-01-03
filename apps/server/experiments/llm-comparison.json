@@ -1,0 +1,15 @@
+{
+  "name": "LLM Decision Comparison",
+  "description": "Ensemble experiment comparing LLM-based decision making. Requires API keys for each LLM to be configured.",
+  "decisionMode": "llm",
+  "startingFood": 1,
+  "agents": [
+    { "llmType": "claude", "name": "Claude", "color": "#ef4444", "startX": 28, "startY": 20 },
+    { "llmType": "codex", "name": "Codex", "color": "#3b82f6", "startX": 30, "startY": 20 },
+    { "llmType": "gemini", "name": "Gemini", "color": "#10b981", "startX": 32, "startY": 20 },
+    { "llmType": "deepseek", "name": "DeepSeek", "color": "#f59e0b", "startX": 28, "startY": 22 },
+    { "llmType": "qwen", "name": "Qwen", "color": "#8b5cf6", "startX": 30, "startY": 22 },
+    { "llmType": "glm", "name": "GLM", "color": "#ec4899", "startX": 32, "startY": 22 },
+    { "llmType": "grok", "name": "Grok", "color": "#1d4ed8", "startX": 30, "startY": 24 }
+  ]
+}

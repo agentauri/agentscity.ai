@@ -4,12 +4,26 @@
 
 import type { Agent, Shelter, ResourceSpawn } from '../db/schema';
 import type { ActionType, ActionParams } from '../actions/types';
+import type { PersonalityTrait } from '../agents/personalities';
 
 // =============================================================================
 // LLM Types
 // =============================================================================
 
-export type LLMType = 'claude' | 'codex' | 'gemini' | 'deepseek' | 'qwen' | 'glm' | 'grok' | 'external';
+export type LLMType =
+  | 'claude'
+  | 'codex'
+  | 'gemini'
+  | 'deepseek'
+  | 'qwen'
+  | 'glm'
+  | 'grok'
+  | 'external'
+  // Baseline agents for scientific comparison (non-LLM)
+  | 'baseline_random'
+  | 'baseline_rule'
+  | 'baseline_sugarscape'
+  | 'baseline_qlearning';
 export type LLMMethod = 'cli' | 'api';
 
 // =============================================================================
@@ -30,6 +44,8 @@ export interface AgentObservation {
     health: number;
     balance: number;
     state: string;
+    /** Agent personality trait (Phase 5: Personality Diversification) */
+    personality?: PersonalityTrait | null;
   };
 
   // What's around (scientific model)
@@ -232,4 +248,9 @@ export const LLM_COSTS: Record<LLMType, LLMCost> = {
   glm: { inputPer1M: 0.60, outputPer1M: 2.20 },
   grok: { inputPer1M: 2.00, outputPer1M: 10.00 }, // Grok-2 pricing
   external: { inputPer1M: 0, outputPer1M: 0 }, // External agents - no platform cost
+  // Baseline agents - no LLM cost (heuristic decisions)
+  baseline_random: { inputPer1M: 0, outputPer1M: 0 },
+  baseline_rule: { inputPer1M: 0, outputPer1M: 0 },
+  baseline_sugarscape: { inputPer1M: 0, outputPer1M: 0 },
+  baseline_qlearning: { inputPer1M: 0, outputPer1M: 0 },
 };

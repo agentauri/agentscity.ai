@@ -44,6 +44,15 @@ export interface VariantDefinition {
   agentConfigs?: AgentConfig[];
   durationTicks: number;
   worldSeed?: number; // For reproducibility
+  /** Scheduled shocks for stress testing agent resilience */
+  shocks?: Array<{
+    type: 'resource_collapse' | 'resource_boom' | 'plague' | 'immigration' | 'communication_blackout' | 'wealth_redistribution';
+    scheduledTick: number;
+    intensity: number;
+    duration?: number;
+  }>;
+  /** Safety level override for prompt ablation studies */
+  safetyLevel?: 'standard' | 'minimal' | 'none';
 }
 
 // =============================================================================
@@ -301,17 +310,29 @@ export async function seedExperiment(
   const variantIds: string[] = [];
 
   for (const variantDef of definition.variants) {
+    // Merge shocks and safety level into configOverrides
+    const configOverrides = {
+      ...variantDef.configOverrides,
+      ...(variantDef.shocks ? { shocks: variantDef.shocks } : {}),
+      ...(variantDef.safetyLevel ? { safetyLevel: variantDef.safetyLevel } : {}),
+    };
+
     const variant = await createVariant(experiment.id, {
       name: variantDef.name,
       description: variantDef.description,
-      configOverrides: variantDef.configOverrides,
+      configOverrides: Object.keys(configOverrides).length > 0 ? configOverrides : undefined,
       agentConfigs: variantDef.agentConfigs,
       durationTicks: variantDef.durationTicks,
       worldSeed: variantDef.worldSeed,
     });
 
     variantIds.push(variant.id);
-    console.log(`  [Created] Variant: ${variant.name} (${variant.id}, seed: ${variantDef.worldSeed ?? 'auto'})`);
+    const extras = [
+      variantDef.worldSeed ? `seed: ${variantDef.worldSeed}` : null,
+      variantDef.shocks?.length ? `shocks: ${variantDef.shocks.length}` : null,
+      variantDef.safetyLevel ? `safety: ${variantDef.safetyLevel}` : null,
+    ].filter(Boolean).join(', ');
+    console.log(`  [Created] Variant: ${variant.name} (${variant.id}${extras ? `, ${extras}` : ''})`);
   }
 
   return { experimentId: experiment.id, variantIds };

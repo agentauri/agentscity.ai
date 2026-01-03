@@ -112,6 +112,21 @@ export async function createResourceSpawn(spawn: NewResourceSpawn): Promise<Reso
 }
 
 /**
+ * Update a resource spawn (for shocks and other modifications)
+ */
+export async function updateResourceSpawn(
+  id: string,
+  updates: Partial<Pick<ResourceSpawn, 'currentAmount' | 'maxAmount' | 'regenRate'>>
+): Promise<ResourceSpawn | undefined> {
+  const result = await db
+    .update(resourceSpawns)
+    .set(updates)
+    .where(eq(resourceSpawns.id, id))
+    .returning();
+  return result[0];
+}
+
+/**
  * Harvest resource from spawn point
  * Returns the amount actually harvested (may be less if not enough available)
  */

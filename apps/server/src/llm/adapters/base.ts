@@ -3,12 +3,26 @@
  *
  * Includes response caching to reduce API costs.
  * Includes OpenTelemetry tracing for observability.
+ * Supports experimental transformations (synthetic vocabulary, capability normalization).
+ *
+ * Phase 5: Personality and RAG Memory Support
+ * - Uses personality from observation.self.personality
+ * - Integrates with RAG-lite memory retrieval when enabled
  */
 
 import type { LLMAdapter, LLMType, LLMMethod, AgentObservation, AgentDecision } from '../types';
-import { buildFullPrompt } from '../prompt-builder';
+import { buildFinalPromptWithMemories } from '../prompt-builder';
 import { parseResponse, getFallbackDecision } from '../response-parser';
 import { getCachedResponse, cacheResponse } from '../../cache/llm-cache';
+import {
+  normalizeLatency,
+  getNormalizationConfig,
+  getNormalizedMaxTokens,
+} from '../capability-normalizer';
+import {
+  reverseSyntheticVocabulary,
+  isSyntheticVocabularyEnabled,
+} from '../prompts/synthetic-vocabulary';
 import {
   startLLMSpan,
   addLLMMetrics,
@@ -71,19 +85,35 @@ export abstract class BaseLLMAdapter implements LLMAdapter {
   abstract isAvailable(): Promise<boolean>;
 
   /**
+   * Get the max tokens for this adapter, respecting normalization settings.
+   */
+  protected getMaxTokens(): number {
+    const config = getNormalizationConfig();
+    return getNormalizedMaxTokens(this.type, config);
+  }
+
+  /**
    * Make a decision based on observation.
    * First checks the cache, then calls the LLM if no cached response is found.
    * Includes OpenTelemetry tracing for all operations.
+   * Applies experimental transformations (synthetic vocabulary, latency normalization).
+   *
+   * Phase 5: Now supports personality injection and RAG memory retrieval.
    */
   async decide(observation: AgentObservation): Promise<AgentDecision> {
     const startTime = Date.now();
     const agentId = observation.self.id;
+    const personality = observation.self.personality;
+    const normConfig = getNormalizationConfig();
 
     // Start tracing span for this LLM call
     const span = startLLMSpan(this.type, agentId, {
       attributes: {
         'llm.adapter_name': this.name,
         'llm.method': this.method,
+        'llm.capability_normalization': normConfig.enabled,
+        'llm.synthetic_vocabulary': isSyntheticVocabularyEnabled(),
+        'llm.personality': personality ?? 'none',
       },
     });
 
@@ -102,26 +132,50 @@ export abstract class BaseLLMAdapter implements LLMAdapter {
 
       span.setAttribute('llm.cache_hit', false);
 
-      // Build prompt
-      const prompt = buildFullPrompt(observation);
+      // Build prompt with experimental transformations
+      // Phase 5: Uses buildFinalPromptWithMemories which:
+      // - Retrieves contextual memories via RAG-lite (if enabled)
+      // - Injects personality into system prompt (if enabled)
+      const prompt = await buildFinalPromptWithMemories(
+        agentId,
+        observation,
+        personality
+      );
       span.setAttribute('llm.prompt_length', prompt.length);
 
       // Call LLM with metrics
+      const llmStartTime = Date.now();
       const result = await this.callLLMWithMetrics(prompt);
-      const durationMs = Date.now() - startTime;
+      const llmDurationMs = Date.now() - llmStartTime;
+
+      // Apply latency normalization if enabled
+      // This adds artificial delay to fast models to level the playing field
+      if (normConfig.enabled) {
+        await normalizeLatency(this.type, llmDurationMs, normConfig);
+        span.setAttribute('llm.latency_normalized', true);
+      }
+
+      const totalDurationMs = Date.now() - startTime;
 
       // Add metrics to span
       addLLMMetrics(span, {
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
         totalTokens: (result.inputTokens ?? 0) + (result.outputTokens ?? 0),
-        durationMs,
+        durationMs: totalDurationMs,
         model: result.model,
         usedFallback: false,
       });
 
+      // Reverse synthetic vocabulary in response if enabled
+      // This converts the model's response back to standard terms for parsing
+      let responseText = result.response;
+      if (isSyntheticVocabularyEnabled()) {
+        responseText = reverseSyntheticVocabulary(responseText);
+      }
+
       // Parse response
-      const decision = parseResponse(result.response);
+      const decision = parseResponse(responseText);
 
       if (decision) {
         // Cache the successful decision
