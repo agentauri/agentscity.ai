@@ -224,8 +224,8 @@ describe('Adapter Availability', () => {
   });
 
   describe('Qwen adapter availability', () => {
-    test('returns true when DASHSCOPE_API_KEY is set', async () => {
-      process.env.DASHSCOPE_API_KEY = 'test-key';
+    test('returns true when QWEN_API_KEY is set', async () => {
+      process.env.QWEN_API_KEY = 'test-key';
       const adapter = getAdapter('qwen');
 
       const available = await adapter?.isAvailable();
@@ -234,8 +234,8 @@ describe('Adapter Availability', () => {
   });
 
   describe('GLM adapter availability', () => {
-    test('returns true when ZHIPU_API_KEY is set', async () => {
-      process.env.ZHIPU_API_KEY = 'test-key';
+    test('returns true when GLM_API_KEY is set', async () => {
+      process.env.GLM_API_KEY = 'test-key';
       const adapter = getAdapter('glm');
 
       const available = await adapter?.isAvailable();
@@ -244,8 +244,8 @@ describe('Adapter Availability', () => {
   });
 
   describe('Grok adapter availability', () => {
-    test('returns true when XAI_API_KEY is set', async () => {
-      process.env.XAI_API_KEY = 'test-key';
+    test('returns true when GROK_API_KEY is set', async () => {
+      process.env.GROK_API_KEY = 'test-key';
       const adapter = getAdapter('grok');
 
       const available = await adapter?.isAvailable();

@@ -29,6 +29,8 @@ function createMockAgent(overrides: Partial<Agent> = {}): Agent {
     createdAt: new Date(),
     updatedAt: new Date(),
     diedAt: null,
+    tenantId: null,
+    personality: null,
     ...overrides,
   };
 }
@@ -197,14 +199,27 @@ describe('handleMove', () => {
       expect(result.error).toContain('Not enough energy');
     });
 
-    test('succeeds with exactly 1 energy', async () => {
-      const agent = createMockAgent({ x: 50, y: 50, energy: 1 });
+    test('succeeds with minimum energy (no vitals penalty)', async () => {
+      // Agent with energy above penalty thresholds (30) so base cost of 1 applies
+      const agent = createMockAgent({ x: 50, y: 50, energy: 31 });
       const intent = createMoveIntent(51, 50);
 
       const result = await handleMove(intent, agent);
 
       expect(result.success).toBe(true);
-      expect(result.changes?.energy).toBe(0);
+      expect(result.changes?.energy).toBe(30); // 31 - 1 base cost
+    });
+
+    test('fails with 1 energy due to vitals penalty', async () => {
+      // Agent with energy=1 has 2x penalty (below critical threshold of 15)
+      // So effective cost is 2, but only has 1 energy
+      const agent = createMockAgent({ x: 50, y: 50, energy: 1 });
+      const intent = createMoveIntent(51, 50);
+
+      const result = await handleMove(intent, agent);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Not enough energy');
     });
 
     test('costs 1 energy per tile moved', async () => {

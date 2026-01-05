@@ -1,10 +1,16 @@
 /**
  * Needs Decay System
  *
- * Each tick, agent needs decay:
- * - Hunger: -1 per tick
- * - Energy: -0.5 per tick (more if hungry)
+ * Each tick, agent needs decay based on their state:
+ * - Hunger: base -1 per tick, modified by state (walking=1.5x, sleeping=0.5x)
+ * - Energy: base -0.5 per tick, modified by state (walking=1.2x, sleeping=0x)
  * - Health: stable (unless critically hungry/exhausted)
+ *
+ * State Multipliers:
+ * - idle: 1.0x hunger, 1.0x energy
+ * - walking: 1.5x hunger, 1.2x energy (exploring is tiring)
+ * - working: 1.3x hunger, 1.0x energy
+ * - sleeping: 0.5x hunger, 0.0x energy (rest slows metabolism)
  *
  * Thresholds:
  * - Low hunger (<20): extra energy drain
@@ -16,12 +22,36 @@
 
 import { v4 as uuid } from 'uuid';
 import { updateAgent, killAgent } from '../db/queries/agents';
+import { getInventoryItem, removeFromInventory } from '../db/queries/inventory';
 import type { Agent } from '../db/schema';
 import type { WorldEvent } from '../cache/pubsub';
 
+// Track consecutive ticks in critical state (for grace timer)
+const criticalTicksMap = new Map<string, { hunger: number; energy: number }>();
+
+/**
+ * Reset critical ticks tracker for a specific agent or all agents.
+ * Useful for testing.
+ */
+export function resetCriticalTicks(agentId?: string): void {
+  if (agentId) {
+    criticalTicksMap.delete(agentId);
+  } else {
+    criticalTicksMap.clear();
+  }
+}
+
+/**
+ * Set critical ticks for testing grace period behavior.
+ * @internal - exported for testing only
+ */
+export function setCriticalTicks(agentId: string, ticks: { hunger: number; energy: number }): void {
+  criticalTicksMap.set(agentId, ticks);
+}
+
 // Configuration
 const CONFIG = {
-  // Decay rates per tick
+  // Decay rates per tick (base values, modified by state)
   hungerDecay: 1,
   energyDecay: 0.5,
 
@@ -35,7 +65,30 @@ const CONFIG = {
   hungerEnergyDrain: 1, // Extra energy drain when hungry
   criticalHungerHealthDamage: 2, // Health damage when critically hungry
   criticalEnergyHealthDamage: 1, // Health damage when exhausted
+
+  // Grace Timer: ticks before HP damage starts (gives agents time to react)
+  graceTicksBeforeDamage: 3,
+
+  // Health Regen: passive healing when well-fed and rested
+  healthRegenThresholdHunger: 70, // Must have hunger above this
+  healthRegenThresholdEnergy: 70, // Must have energy above this
+  healthRegenRate: 0.2, // HP restored per tick when conditions met
+
+  // Auto-consume: eat food automatically when sleeping and critically hungry
+  autoConsumeHungerThreshold: 20, // Auto-eat when hunger drops below this during sleep
+  foodHungerRestore: 30, // How much hunger food restores
 } as const;
+
+// State-based decay multipliers
+// Walking agents get hungrier faster (exploring is tiring)
+// Sleeping agents have slower metabolism (rest preserves energy)
+const STATE_MULTIPLIERS: Record<string, { hunger: number; energy: number }> = {
+  idle: { hunger: 1.0, energy: 1.0 },
+  walking: { hunger: 1.5, energy: 1.2 },
+  working: { hunger: 1.3, energy: 1.0 },
+  sleeping: { hunger: 0.5, energy: 0.0 }, // Sleep stops energy decay, slows hunger
+  dead: { hunger: 0, energy: 0 },
+};
 
 export interface DecayResult {
   agentId: string;
@@ -59,11 +112,14 @@ export type DecayEffect =
   | 'hunger_decreased'
   | 'energy_decreased'
   | 'health_damaged'
+  | 'health_regenerated'
   | 'low_hunger_warning'
   | 'critical_hunger_warning'
   | 'low_energy_warning'
   | 'critical_energy_warning'
   | 'forced_rest'
+  | 'auto_consumed_food'
+  | 'grace_period_active'
   | 'death';
 
 export async function applyNeedsDecay(agent: Agent, tick: number): Promise<DecayResult> {
@@ -81,12 +137,18 @@ export async function applyNeedsDecay(agent: Agent, tick: number): Promise<Decay
   let newEnergy = agent.energy;
   let newHealth = agent.health;
 
-  // Apply hunger decay
-  newHunger = Math.max(0, newHunger - CONFIG.hungerDecay);
-  effects.push('hunger_decreased');
+  // Get state-based multipliers (default to idle if unknown state)
+  const stateMultiplier = STATE_MULTIPLIERS[agent.state] ?? STATE_MULTIPLIERS.idle;
 
-  // Apply base energy decay
-  let energyDrain = CONFIG.energyDecay;
+  // Apply hunger decay (modified by state)
+  const hungerDecay = CONFIG.hungerDecay * stateMultiplier.hunger;
+  newHunger = Math.max(0, newHunger - hungerDecay);
+  if (hungerDecay > 0) {
+    effects.push('hunger_decreased');
+  }
+
+  // Apply base energy decay (modified by state)
+  let energyDrain = CONFIG.energyDecay * stateMultiplier.energy;
 
   // Extra energy drain if hungry
   if (newHunger < CONFIG.lowHungerThreshold) {
@@ -107,30 +169,98 @@ export async function applyNeedsDecay(agent: Agent, tick: number): Promise<Decay
     });
   }
 
-  // Critical hunger: health damage
+  // Critical hunger: health damage WITH grace timer
   if (newHunger < CONFIG.criticalHungerThreshold) {
-    newHealth = Math.max(0, newHealth - CONFIG.criticalHungerHealthDamage);
-    effects.push('critical_hunger_warning');
-    effects.push('health_damaged');
+    // Get or initialize critical ticks counter
+    const criticalTicks = criticalTicksMap.get(agent.id) ?? { hunger: 0, energy: 0 };
+    criticalTicks.hunger += 1;
+    criticalTicksMap.set(agent.id, criticalTicks);
 
-    events.push({
-      id: uuid(),
-      type: 'needs_warning',
-      tick,
-      timestamp: Date.now(),
-      agentId: agent.id,
-      payload: {
-        need: 'hunger',
-        level: 'critical',
-        value: newHunger,
-        healthDamage: CONFIG.criticalHungerHealthDamage,
-      },
-    });
+    effects.push('critical_hunger_warning');
+
+    // Only apply damage AFTER grace period
+    if (criticalTicks.hunger > CONFIG.graceTicksBeforeDamage) {
+      newHealth = Math.max(0, newHealth - CONFIG.criticalHungerHealthDamage);
+      effects.push('health_damaged');
+
+      events.push({
+        id: uuid(),
+        type: 'needs_warning',
+        tick,
+        timestamp: Date.now(),
+        agentId: agent.id,
+        payload: {
+          need: 'hunger',
+          level: 'critical',
+          value: newHunger,
+          healthDamage: CONFIG.criticalHungerHealthDamage,
+          gracePeriodExpired: true,
+        },
+      });
+    } else {
+      // Still in grace period - warn but no damage yet
+      effects.push('grace_period_active');
+
+      events.push({
+        id: uuid(),
+        type: 'needs_warning',
+        tick,
+        timestamp: Date.now(),
+        agentId: agent.id,
+        payload: {
+          need: 'hunger',
+          level: 'critical',
+          value: newHunger,
+          graceTicksRemaining: CONFIG.graceTicksBeforeDamage - criticalTicks.hunger,
+          gracePeriodActive: true,
+        },
+      });
+    }
+  } else {
+    // Reset hunger grace timer when above critical
+    const criticalTicks = criticalTicksMap.get(agent.id);
+    if (criticalTicks) {
+      criticalTicks.hunger = 0;
+      criticalTicksMap.set(agent.id, criticalTicks);
+    }
+  }
+
+  // P3: Auto-consume food during sleep if critically hungry
+  // This prevents agents from dying in their sleep when they have food
+  if (agent.state === 'sleeping' && newHunger < CONFIG.autoConsumeHungerThreshold) {
+    try {
+      const food = await getInventoryItem(agent.id, 'food');
+      if (food && food.quantity > 0) {
+        await removeFromInventory(agent.id, 'food', 1);
+        newHunger = Math.min(100, newHunger + CONFIG.foodHungerRestore);
+        effects.push('auto_consumed_food');
+
+        events.push({
+          id: uuid(),
+          type: 'auto_consumed',
+          tick,
+          timestamp: Date.now(),
+          agentId: agent.id,
+          payload: {
+            itemType: 'food',
+            quantity: 1,
+            hungerRestored: CONFIG.foodHungerRestore,
+            newHunger,
+            reason: 'Automatically consumed food while sleeping to prevent starvation',
+          },
+        });
+      }
+    } catch (error) {
+      // Silently fail - auto-consume is a safety net, not critical
+      console.error('[NeedsDecay] Auto-consume failed:', error);
+    }
   }
 
   // Apply energy decay
   newEnergy = Math.max(0, newEnergy - energyDrain);
-  effects.push('energy_decreased');
+  if (energyDrain > 0) {
+    effects.push('energy_decreased');
+  }
 
   // Low energy warning
   if (newEnergy < CONFIG.lowEnergyThreshold && newEnergy >= CONFIG.criticalEnergyThreshold) {
@@ -169,6 +299,31 @@ export async function applyNeedsDecay(agent: Agent, tick: number): Promise<Decay
         value: newEnergy,
         healthDamage: CONFIG.criticalEnergyHealthDamage,
         forcedRest: true,
+      },
+    });
+  }
+
+  // P5: Health Regen - passive healing when well-fed and well-rested
+  // This encourages proactive resource management
+  if (
+    newHunger > CONFIG.healthRegenThresholdHunger &&
+    newEnergy > CONFIG.healthRegenThresholdEnergy &&
+    newHealth < 100
+  ) {
+    const healedAmount = Math.min(CONFIG.healthRegenRate, 100 - newHealth);
+    newHealth = Math.min(100, newHealth + CONFIG.healthRegenRate);
+    effects.push('health_regenerated');
+
+    events.push({
+      id: uuid(),
+      type: 'health_regenerated',
+      tick,
+      timestamp: Date.now(),
+      agentId: agent.id,
+      payload: {
+        amount: healedAmount,
+        newHealth,
+        reason: 'Well-fed and rested - passive health regeneration',
       },
     });
   }

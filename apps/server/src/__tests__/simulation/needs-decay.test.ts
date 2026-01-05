@@ -24,7 +24,7 @@ mock.module('../../db/queries/agents', () => ({
 }));
 
 // Import after mocking
-import { applyNeedsDecay, calculateSurvivalTicks } from '../../simulation/needs-decay';
+import { applyNeedsDecay, calculateSurvivalTicks, resetCriticalTicks, setCriticalTicks } from '../../simulation/needs-decay';
 
 // Helper to create mock agent
 function createMockAgent(overrides: Partial<Agent> = {}): Agent {
@@ -42,6 +42,8 @@ function createMockAgent(overrides: Partial<Agent> = {}): Agent {
     createdAt: new Date(),
     updatedAt: new Date(),
     diedAt: null,
+    tenantId: null,
+    personality: null,
     ...overrides,
   };
 }
@@ -50,6 +52,7 @@ describe('applyNeedsDecay', () => {
   beforeEach(() => {
     mockUpdateAgent.mockClear();
     mockKillAgent.mockClear();
+    resetCriticalTicks(); // Clear grace period state between tests
   });
 
   describe('hunger decay', () => {
@@ -153,16 +156,29 @@ describe('applyNeedsDecay', () => {
       expect(result.effects).toContain('critical_hunger_warning');
     });
 
-    test('damages health by 2 when critically hungry', async () => {
+    test('does not damage health immediately when critically hungry (grace period)', async () => {
       const agent = createMockAgent({ hunger: 5, energy: 80, health: 100 });
       const result = await applyNeedsDecay(agent, 1);
 
-      // Health: 100 - 2 = 98
+      // Grace period active - no health damage yet
+      expect(result.newState.health).toBe(100);
+      expect(result.effects).toContain('grace_period_active');
+      expect(result.effects).not.toContain('health_damaged');
+    });
+
+    test('damages health by 2 after grace period expires', async () => {
+      const agent = createMockAgent({ hunger: 5, energy: 80, health: 100 });
+      // Set up 3 prior critical ticks so the next tick exceeds grace period
+      setCriticalTicks(agent.id, { hunger: 3, energy: 0 });
+
+      const result = await applyNeedsDecay(agent, 1);
+
+      // Grace period expired - health damage applies
       expect(result.newState.health).toBe(98);
       expect(result.effects).toContain('health_damaged');
     });
 
-    test('emits needs_warning event for critical hunger', async () => {
+    test('emits needs_warning event for critical hunger with grace period info', async () => {
       const agent = createMockAgent({ hunger: 5, energy: 80, health: 100 });
       const result = await applyNeedsDecay(agent, 1);
 
@@ -170,7 +186,22 @@ describe('applyNeedsDecay', () => {
         (e) => e.type === 'needs_warning' && e.payload?.need === 'hunger' && e.payload?.level === 'critical'
       );
       expect(warningEvent).toBeDefined();
+      expect(warningEvent?.payload?.gracePeriodActive).toBe(true);
+      expect(warningEvent?.payload?.graceTicksRemaining).toBe(2);
+    });
+
+    test('emits needs_warning event with healthDamage after grace period', async () => {
+      const agent = createMockAgent({ hunger: 5, energy: 80, health: 100 });
+      setCriticalTicks(agent.id, { hunger: 3, energy: 0 });
+
+      const result = await applyNeedsDecay(agent, 1);
+
+      const warningEvent = result.events.find(
+        (e) => e.type === 'needs_warning' && e.payload?.need === 'hunger' && e.payload?.level === 'critical'
+      );
+      expect(warningEvent).toBeDefined();
       expect(warningEvent?.payload?.healthDamage).toBe(2);
+      expect(warningEvent?.payload?.gracePeriodExpired).toBe(true);
     });
   });
 
@@ -241,11 +272,23 @@ describe('applyNeedsDecay', () => {
   });
 
   describe('combined critical states', () => {
-    test('both critical hunger and energy apply health damage', async () => {
+    test('only energy damages health immediately when both critical (hunger has grace period)', async () => {
       const agent = createMockAgent({ hunger: 5, energy: 5, health: 100 });
       const result = await applyNeedsDecay(agent, 1);
 
-      // Critical hunger: -2 health
+      // Critical hunger: grace period active, no damage
+      // Critical energy: -1 health (no grace period)
+      // Total: 100 - 1 = 99
+      expect(result.newState.health).toBe(99);
+    });
+
+    test('both apply damage after hunger grace period expires', async () => {
+      const agent = createMockAgent({ hunger: 5, energy: 5, health: 100 });
+      setCriticalTicks(agent.id, { hunger: 3, energy: 0 });
+
+      const result = await applyNeedsDecay(agent, 1);
+
+      // Critical hunger: -2 health (grace period expired)
       // Critical energy: -1 health
       // Total: 100 - 2 - 1 = 97
       expect(result.newState.health).toBe(97);
@@ -253,8 +296,11 @@ describe('applyNeedsDecay', () => {
   });
 
   describe('death condition', () => {
-    test('agent dies when health reaches 0', async () => {
+    test('agent dies when health reaches 0 from starvation (after grace period)', async () => {
       const agent = createMockAgent({ hunger: 5, energy: 80, health: 2 });
+      // Set grace period as expired
+      setCriticalTicks(agent.id, { hunger: 3, energy: 0 });
+
       const result = await applyNeedsDecay(agent, 1);
 
       // Critical hunger damages 2 health: 2 - 2 = 0
@@ -262,8 +308,21 @@ describe('applyNeedsDecay', () => {
       expect(result.effects).toContain('death');
     });
 
+    test('agent dies when health reaches 0 from exhaustion', async () => {
+      const agent = createMockAgent({ hunger: 80, energy: 5, health: 1 });
+      const result = await applyNeedsDecay(agent, 1);
+
+      // Critical energy: -1 health (no grace period)
+      // Health: 1 - 1 = 0
+      expect(result.died).toBe(true);
+      expect(result.newState.health).toBe(0);
+    });
+
     test('agent dies when health goes below 0', async () => {
       const agent = createMockAgent({ hunger: 5, energy: 5, health: 1 });
+      // Set grace period as expired for hunger
+      setCriticalTicks(agent.id, { hunger: 3, energy: 0 });
+
       const result = await applyNeedsDecay(agent, 1);
 
       // Critical hunger: -2, critical energy: -1
@@ -273,14 +332,15 @@ describe('applyNeedsDecay', () => {
     });
 
     test('calls killAgent when agent dies', async () => {
-      const agent = createMockAgent({ hunger: 5, energy: 80, health: 2 });
+      const agent = createMockAgent({ hunger: 80, energy: 5, health: 1 });
       await applyNeedsDecay(agent, 1);
 
+      // Critical energy causes death
       expect(mockKillAgent).toHaveBeenCalledWith(agent.id);
     });
 
     test('does not call updateAgent when agent dies', async () => {
-      const agent = createMockAgent({ hunger: 5, energy: 80, health: 2 });
+      const agent = createMockAgent({ hunger: 80, energy: 5, health: 1 });
       await applyNeedsDecay(agent, 1);
 
       expect(mockUpdateAgent).not.toHaveBeenCalled();
@@ -288,6 +348,9 @@ describe('applyNeedsDecay', () => {
 
     test('death cause is starvation when critically hungry', async () => {
       const agent = createMockAgent({ hunger: 5, energy: 80, health: 2 });
+      // Set grace period as expired
+      setCriticalTicks(agent.id, { hunger: 3, energy: 0 });
+
       const result = await applyNeedsDecay(agent, 1);
 
       expect(result.deathCause).toBe('starvation');
