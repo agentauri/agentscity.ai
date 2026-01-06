@@ -43,10 +43,10 @@ export function ConfigInput(props: ConfigInputProps) {
   const { label, description, isRuntimeModifiable, disabled } = props;
 
   return (
-    <div className="flex items-center justify-between py-2 border-b border-gray-700 last:border-0">
+    <div className="flex items-start justify-between py-2 border-b border-gray-700 last:border-0">
       <div className="flex-1 min-w-0 pr-4">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-200 truncate">{label}</span>
+          <span className="text-sm text-gray-200">{label}</span>
           {isRuntimeModifiable && (
             <span className="text-xs text-yellow-400" title="Applied immediately without restart">
               ⚡
@@ -54,7 +54,7 @@ export function ConfigInput(props: ConfigInputProps) {
           )}
         </div>
         {description && (
-          <p className="text-xs text-gray-500 truncate">{description}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{description}</p>
         )}
       </div>
       <div className="flex-shrink-0">
