@@ -125,7 +125,7 @@ jobs:
 
       - name: Setup test database
         working-directory: apps/server
-        run: timeout 60 bunx drizzle-kit push
+        run: echo "y" | timeout 120 bunx drizzle-kit push
         env:
           DATABASE_URL: postgres://test:test@localhost:5432/simagents_test
 
