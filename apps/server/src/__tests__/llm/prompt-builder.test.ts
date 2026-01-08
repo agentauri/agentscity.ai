@@ -781,19 +781,15 @@ describe('buildAvailableActions', () => {
         self: { ...createMockObservation().self, state: 'idle', energy: 10 },
         activeEmployments: [{
           id: 'test-emp',
-          employerId: 'employer',
-          workerId: 'test-agent-id',
+          otherPartyId: 'employer',
           role: 'worker',
           salary: 10,
           paymentType: 'per_tick',
-          escrowAmount: 0,
           ticksRequired: 5,
           ticksWorked: 0,
           amountPaid: 0,
           isComplete: false,
           needsPayment: false,
-          createdAt: new Date(),
-          updatedAt: new Date()
         }]
       });
       const actions = buildAvailableActions(obs);

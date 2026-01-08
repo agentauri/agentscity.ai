@@ -62,6 +62,19 @@ function createConsumeIntent(itemType: string, agentId = 'test-agent-id'): Actio
   };
 }
 
+// Helper to create mock inventory item
+function createMockInventoryItem(itemType: string, quantity: number): InventoryItem {
+  return {
+    id: 'test-inventory-item',
+    agentId: 'test-agent-id',
+    itemType,
+    quantity,
+    properties: {},
+    createdAt: new Date(),
+    tenantId: null,
+  };
+}
+
 describe('handleConsume', () => {
   beforeEach(() => {
     mockGetInventoryItem.mockClear();
@@ -74,7 +87,7 @@ describe('handleConsume', () => {
   describe('consume food', () => {
     beforeEach(() => {
       mockGetInventoryItem.mockImplementation(() =>
-        Promise.resolve({ agentId: 'test-agent-id', itemType: 'food', quantity: 5 })
+        Promise.resolve(createMockInventoryItem('food', 5))
       );
     });
 
@@ -139,7 +152,7 @@ describe('handleConsume', () => {
   describe('consume water', () => {
     beforeEach(() => {
       mockGetInventoryItem.mockImplementation(() =>
-        Promise.resolve({ agentId: 'test-agent-id', itemType: 'water', quantity: 3 })
+        Promise.resolve(createMockInventoryItem('water', 3))
       );
     });
 
@@ -177,7 +190,7 @@ describe('handleConsume', () => {
   describe('consume medicine', () => {
     beforeEach(() => {
       mockGetInventoryItem.mockImplementation(() =>
-        Promise.resolve({ agentId: 'test-agent-id', itemType: 'medicine', quantity: 2 })
+        Promise.resolve(createMockInventoryItem('medicine', 2))
       );
     });
 
@@ -228,7 +241,7 @@ describe('handleConsume', () => {
 
     test('rejects when item quantity is 0', async () => {
       mockGetInventoryItem.mockImplementation(() =>
-        Promise.resolve({ agentId: 'test-agent-id', itemType: 'food', quantity: 0 })
+        Promise.resolve(createMockInventoryItem('food', 0))
       );
 
       const agent = createMockAgent();
@@ -253,7 +266,7 @@ describe('handleConsume', () => {
   describe('invalid item types', () => {
     test('rejects unknown item type', async () => {
       mockGetInventoryItem.mockImplementation(() =>
-        Promise.resolve({ agentId: 'test-agent-id', itemType: 'rock', quantity: 5 })
+        Promise.resolve(createMockInventoryItem('rock', 5))
       );
 
       const agent = createMockAgent();
@@ -280,7 +293,7 @@ describe('handleConsume', () => {
   describe('memory creation', () => {
     beforeEach(() => {
       mockGetInventoryItem.mockImplementation(() =>
-        Promise.resolve({ agentId: 'test-agent-id', itemType: 'food', quantity: 5 })
+        Promise.resolve(createMockInventoryItem('food', 5))
       );
     });
 
@@ -318,7 +331,7 @@ describe('handleConsume', () => {
   describe('edge cases', () => {
     beforeEach(() => {
       mockGetInventoryItem.mockImplementation(() =>
-        Promise.resolve({ agentId: 'test-agent-id', itemType: 'food', quantity: 1 })
+        Promise.resolve(createMockInventoryItem('food', 1))
       );
     });
 
@@ -334,7 +347,7 @@ describe('handleConsume', () => {
 
     test('only removes 1 item regardless of quantity in inventory', async () => {
       mockGetInventoryItem.mockImplementation(() =>
-        Promise.resolve({ agentId: 'test-agent-id', itemType: 'food', quantity: 100 })
+        Promise.resolve(createMockInventoryItem('food', 100))
       );
 
       const agent = createMockAgent();

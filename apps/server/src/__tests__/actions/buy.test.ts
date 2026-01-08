@@ -182,10 +182,11 @@ describe('handleBuy', () => {
 
       await handleBuy(intent, agent);
 
-      const memoryCall = mockStoreMemory.mock.calls[0][0] as { content: string };
-      expect(memoryCall.content).toContain('Bought 2x food');
-      expect(memoryCall.content).toContain('20 CITY');
-      expect(memoryCall.content).toContain('Balance now 80');
+      expect(mockStoreMemory.mock.calls.length).toBeGreaterThan(0);
+      const memoryCall = mockStoreMemory.mock.calls[0]?.[0] as { content: string } | undefined;
+      expect(memoryCall?.content).toContain('Bought 2x food');
+      expect(memoryCall?.content).toContain('20 CITY');
+      expect(memoryCall?.content).toContain('Balance now 80');
     });
 
     test('emits agent_bought event', async () => {

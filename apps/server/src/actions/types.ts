@@ -54,7 +54,7 @@ export interface MoveParams {
 
 export interface BuyParams {
   itemType: string;
-  quantity: number;
+  quantity?: number;
   locationId?: string;
 }
 

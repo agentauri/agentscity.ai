@@ -54,7 +54,7 @@ function createMockObservation(overrides: Partial<AgentObservation['self']> = {}
 function createMockDecision(): AgentDecision {
   return {
     action: 'move',
-    params: { direction: 'north' },
+    params: { toX: 10, toY: 21 },
     reasoning: 'Moving north to find resources',
   };
 }
@@ -204,7 +204,7 @@ describe('LLM Cache', () => {
       const obs = createMockObservation();
       const claudeDecision: AgentDecision = {
         action: 'move',
-        params: { direction: 'north' },
+        params: { toX: 10, toY: 21 },
         reasoning: 'Claude reasoning',
       };
       const geminiDecision: AgentDecision = {
