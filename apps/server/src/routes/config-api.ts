@@ -16,6 +16,12 @@ import {
   setRuntimeConfig,
   resetRuntimeConfig,
 } from '../config';
+import {
+  getPersonalityWeights,
+  setPersonalityWeights,
+  resetPersonalityWeights,
+  type PersonalityTrait,
+} from '../agents/personalities';
 
 // =============================================================================
 // Types
@@ -59,10 +65,15 @@ interface ConfigResponse {
     ttlSeconds: number;
   };
   actions: {
-    move: { energyCost: number };
+    move: { energyCost: number; hungerCost: number; consecutivePenalty: number };
     gather: { energyCostPerUnit: number; maxPerAction: number };
     work: { basePayPerTick: number; energyCostPerTick: number };
     sleep: { energyRestoredPerTick: number };
+  };
+  economy: {
+    currencyDecayRate: number;
+    currencyDecayInterval: number;
+    currencyDecayThreshold: number;
   };
 }
 
@@ -72,6 +83,46 @@ interface ConfigUpdateRequest {
   needs?: Partial<ConfigResponse['needs']>;
   experiment?: Partial<ConfigResponse['experiment']>;
   llmCache?: Partial<ConfigResponse['llmCache']>;
+  actions?: {
+    move?: Partial<ConfigResponse['actions']['move']>;
+    gather?: Partial<ConfigResponse['actions']['gather']>;
+    work?: Partial<ConfigResponse['actions']['work']>;
+    sleep?: Partial<ConfigResponse['actions']['sleep']>;
+  };
+  economy?: Partial<ConfigResponse['economy']>;
+}
+
+// Genesis configuration types
+type LLMType = 'claude' | 'codex' | 'gemini' | 'deepseek' | 'qwen' | 'glm' | 'grok';
+
+interface GenesisConfig {
+  enabled: boolean;
+  childrenPerMother: number;
+  mothers: LLMType[];
+  mode: 'single' | 'evolutionary';
+  diversityThreshold: number;
+  requiredArchetypes: string[];
+  useConfiguredPersonalities: boolean;
+}
+
+// In-memory genesis configuration (runtime only, not persisted to env)
+let currentGenesisConfig: GenesisConfig = {
+  enabled: false,
+  childrenPerMother: 25,
+  mothers: ['claude', 'gemini', 'codex'],
+  mode: 'single',
+  diversityThreshold: 0.3,
+  requiredArchetypes: ['high_risk', 'low_risk', 'high_cooperation'],
+  useConfiguredPersonalities: false,
+};
+
+// Export for use in world-api
+export function getGenesisConfig(): GenesisConfig {
+  return { ...currentGenesisConfig };
+}
+
+export function setGenesisConfig(config: Partial<GenesisConfig>): void {
+  currentGenesisConfig = { ...currentGenesisConfig, ...config };
 }
 
 // =============================================================================
@@ -119,7 +170,11 @@ function buildConfigResponse(): ConfigResponse {
       ttlSeconds: runtime.llm.cache.ttlSeconds,
     },
     actions: {
-      move: { energyCost: runtime.actions.move.energyCost },
+      move: {
+        energyCost: runtime.actions.move.energyCost,
+        hungerCost: runtime.actions.move.hungerCost,
+        consecutivePenalty: runtime.actions.move.consecutivePenalty,
+      },
       gather: {
         energyCostPerUnit: runtime.actions.gather.energyCostPerUnit,
         maxPerAction: runtime.actions.gather.maxPerAction,
@@ -131,6 +186,11 @@ function buildConfigResponse(): ConfigResponse {
       sleep: {
         energyRestoredPerTick: runtime.actions.sleep.energyRestoredPerTick,
       },
+    },
+    economy: {
+      currencyDecayRate: runtime.economy.currencyDecayRate,
+      currencyDecayInterval: runtime.economy.currencyDecayInterval,
+      currencyDecayThreshold: runtime.economy.currencyDecayThreshold,
     },
   };
 }
@@ -174,7 +234,11 @@ function buildDefaultsResponse(): ConfigResponse {
       ttlSeconds: CONFIG.llm.cache.ttlSeconds,
     },
     actions: {
-      move: { energyCost: CONFIG.actions.move.energyCost },
+      move: {
+        energyCost: CONFIG.actions.move.energyCost,
+        hungerCost: CONFIG.actions.move.hungerCost,
+        consecutivePenalty: CONFIG.actions.move.consecutivePenalty,
+      },
       gather: {
         energyCostPerUnit: CONFIG.actions.gather.energyCostPerUnit,
         maxPerAction: CONFIG.actions.gather.maxPerAction,
@@ -186,6 +250,11 @@ function buildDefaultsResponse(): ConfigResponse {
       sleep: {
         energyRestoredPerTick: CONFIG.actions.sleep.energyRestoredPerTick,
       },
+    },
+    economy: {
+      currencyDecayRate: CONFIG.economy.currencyDecayRate,
+      currencyDecayInterval: CONFIG.economy.currencyDecayInterval,
+      currencyDecayThreshold: CONFIG.economy.currencyDecayThreshold,
     },
   };
 }
@@ -218,6 +287,12 @@ export async function registerConfigRoutes(server: FastifyInstance): Promise<voi
         'simulation.testMode',
         'experiment.useEmergentPrompt',
         'llmCache.enabled',
+        'actions.move.energyCost',
+        'actions.move.hungerCost',
+        'actions.move.consecutivePenalty',
+        'economy.currencyDecayRate',
+        'economy.currencyDecayInterval',
+        'economy.currencyDecayThreshold',
       ],
     };
   });
@@ -287,6 +362,47 @@ export async function registerConfigRoutes(server: FastifyInstance): Promise<voi
             properties: {
               enabled: { type: 'boolean' },
               ttlSeconds: { type: 'number' },
+            },
+          },
+          actions: {
+            type: 'object',
+            properties: {
+              move: {
+                type: 'object',
+                properties: {
+                  energyCost: { type: 'number' },
+                  hungerCost: { type: 'number' },
+                  consecutivePenalty: { type: 'number' },
+                },
+              },
+              gather: {
+                type: 'object',
+                properties: {
+                  energyCostPerUnit: { type: 'number' },
+                  maxPerAction: { type: 'number' },
+                },
+              },
+              work: {
+                type: 'object',
+                properties: {
+                  basePayPerTick: { type: 'number' },
+                  energyCostPerTick: { type: 'number' },
+                },
+              },
+              sleep: {
+                type: 'object',
+                properties: {
+                  energyRestoredPerTick: { type: 'number' },
+                },
+              },
+            },
+          },
+          economy: {
+            type: 'object',
+            properties: {
+              currencyDecayRate: { type: 'number' },
+              currencyDecayInterval: { type: 'number' },
+              currencyDecayThreshold: { type: 'number' },
             },
           },
         },
@@ -366,6 +482,43 @@ export async function registerConfigRoutes(server: FastifyInstance): Promise<voi
       }
     }
 
+    // Handle actions updates (runtime modifiable)
+    if (updates.actions) {
+      runtimeUpdates.actions = {};
+      if (updates.actions.move) {
+        runtimeUpdates.actions.move = updates.actions.move;
+        Object.keys(updates.actions.move).forEach((key) => {
+          appliedImmediately.push(`actions.move.${key}`);
+        });
+      }
+      if (updates.actions.gather) {
+        runtimeUpdates.actions.gather = updates.actions.gather;
+        Object.keys(updates.actions.gather).forEach((key) => {
+          appliedImmediately.push(`actions.gather.${key}`);
+        });
+      }
+      if (updates.actions.work) {
+        runtimeUpdates.actions.work = updates.actions.work;
+        Object.keys(updates.actions.work).forEach((key) => {
+          appliedImmediately.push(`actions.work.${key}`);
+        });
+      }
+      if (updates.actions.sleep) {
+        runtimeUpdates.actions.sleep = updates.actions.sleep;
+        Object.keys(updates.actions.sleep).forEach((key) => {
+          appliedImmediately.push(`actions.sleep.${key}`);
+        });
+      }
+    }
+
+    // Handle economy updates (runtime modifiable)
+    if (updates.economy && Object.keys(updates.economy).length > 0) {
+      runtimeUpdates.economy = updates.economy;
+      Object.keys(updates.economy).forEach((key) => {
+        appliedImmediately.push(`economy.${key}`);
+      });
+    }
+
     if (Object.keys(runtimeUpdates).length > 0) {
       setRuntimeConfig(runtimeUpdates);
     }
@@ -403,6 +556,201 @@ export async function registerConfigRoutes(server: FastifyInstance): Promise<voi
     return {
       success: true,
       config: buildConfigResponse(),
+    };
+  });
+
+  // =============================================================================
+  // Genesis Configuration Endpoints
+  // =============================================================================
+
+  // Get genesis configuration
+  server.get('/api/config/genesis', {
+    schema: {
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            enabled: { type: 'boolean' },
+            childrenPerMother: { type: 'number' },
+            mothers: { type: 'array', items: { type: 'string' } },
+            mode: { type: 'string', enum: ['single', 'evolutionary'] },
+            diversityThreshold: { type: 'number' },
+            requiredArchetypes: { type: 'array', items: { type: 'string' } },
+          },
+        },
+      },
+    },
+  }, async () => {
+    return getGenesisConfig();
+  });
+
+  // Update genesis configuration
+  server.post<{ Body: Partial<GenesisConfig> }>('/api/config/genesis', {
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          enabled: { type: 'boolean' },
+          childrenPerMother: { type: 'number', minimum: 5, maximum: 100 },
+          mothers: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: ['claude', 'codex', 'gemini', 'deepseek', 'qwen', 'glm', 'grok'],
+            },
+          },
+          mode: { type: 'string', enum: ['single', 'evolutionary'] },
+          diversityThreshold: { type: 'number', minimum: 0, maximum: 1 },
+          requiredArchetypes: { type: 'array', items: { type: 'string' } },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            requiresRestart: { type: 'boolean' },
+          },
+        },
+      },
+    },
+  }, async (request) => {
+    const updates = request.body;
+
+    // Validate childrenPerMother range
+    if (updates.childrenPerMother !== undefined) {
+      if (updates.childrenPerMother < 5 || updates.childrenPerMother > 100) {
+        throw new Error('childrenPerMother must be between 5 and 100');
+      }
+    }
+
+    // Validate at least one mother when enabled
+    if (updates.enabled && updates.mothers && updates.mothers.length === 0) {
+      throw new Error('At least one mother LLM must be selected when Genesis is enabled');
+    }
+
+    setGenesisConfig(updates);
+    console.log('[Config] Updated genesis configuration:', getGenesisConfig());
+
+    return {
+      success: true,
+      requiresRestart: true, // Genesis changes always require restart
+    };
+  });
+
+  // =============================================================================
+  // Personality Configuration Endpoints
+  // =============================================================================
+
+  // Get personality weights
+  server.get('/api/config/personalities', {
+    schema: {
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            weights: {
+              type: 'object',
+              properties: {
+                aggressive: { type: 'number' },
+                cooperative: { type: 'number' },
+                cautious: { type: 'number' },
+                explorer: { type: 'number' },
+                social: { type: 'number' },
+                neutral: { type: 'number' },
+              },
+            },
+            enabled: { type: 'boolean' },
+          },
+        },
+      },
+    },
+  }, async () => {
+    return {
+      weights: getPersonalityWeights(),
+      enabled: getRuntimeConfig().experiment.enablePersonalities,
+    };
+  });
+
+  // Update personality weights
+  server.post<{
+    Body: {
+      weights?: Partial<Record<PersonalityTrait, number>>;
+      enabled?: boolean;
+    };
+  }>('/api/config/personalities', {
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          weights: {
+            type: 'object',
+            properties: {
+              aggressive: { type: 'number', minimum: 0, maximum: 1 },
+              cooperative: { type: 'number', minimum: 0, maximum: 1 },
+              cautious: { type: 'number', minimum: 0, maximum: 1 },
+              explorer: { type: 'number', minimum: 0, maximum: 1 },
+              social: { type: 'number', minimum: 0, maximum: 1 },
+              neutral: { type: 'number', minimum: 0, maximum: 1 },
+            },
+          },
+          enabled: { type: 'boolean' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            weights: { type: 'object' },
+            requiresRestart: { type: 'boolean' },
+          },
+        },
+      },
+    },
+  }, async (request) => {
+    const { weights, enabled } = request.body;
+
+    if (weights) {
+      setPersonalityWeights(weights);
+    }
+
+    if (enabled !== undefined) {
+      setRuntimeConfig({ experiment: { enablePersonalities: enabled } });
+    }
+
+    console.log('[Config] Updated personality config:', {
+      weights: getPersonalityWeights(),
+      enabled: getRuntimeConfig().experiment.enablePersonalities,
+    });
+
+    return {
+      success: true,
+      weights: getPersonalityWeights(),
+      requiresRestart: true, // Personality changes require restart for new agents
+    };
+  });
+
+  // Reset personality weights to defaults
+  server.post('/api/config/personalities/reset', {
+    schema: {
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            weights: { type: 'object' },
+          },
+        },
+      },
+    },
+  }, async () => {
+    resetPersonalityWeights();
+    console.log('[Config] Reset personality weights to defaults');
+
+    return {
+      success: true,
+      weights: getPersonalityWeights(),
     };
   });
 }

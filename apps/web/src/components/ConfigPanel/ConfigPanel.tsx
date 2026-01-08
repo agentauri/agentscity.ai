@@ -7,8 +7,14 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useConfigStore } from '../../stores/config';
+import { useApiKeysStore, type LLMType } from '../../stores/apiKeys';
 import { ConfigSection } from './ConfigSection';
 import { ConfigInput } from './ConfigInput';
+import { ApiKeyInput } from './ApiKeyInput';
+import { FallbackModeInfo } from './FallbackModeInfo';
+import { PromptEditor } from './PromptEditor';
+import { GenesisConfig } from './GenesisConfig';
+import { PersonalityConfig } from './PersonalityConfig';
 
 interface ConfigPanelProps {
   onClose: () => void;
@@ -27,10 +33,28 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
     updateNeeds,
     updateExperiment,
     updateLLMCache,
+    updateActions,
+    updateEconomy,
     applyChanges,
     resetConfig,
     discardChanges,
   } = useConfigStore();
+
+  const {
+    providers,
+    status: keyStatus,
+    pendingKeys,
+    isLoading: keysLoading,
+    error: keysError,
+    fetchStatus: fetchKeyStatus,
+    setPendingKey,
+    applyKeys,
+    clearKey,
+    toggleDisabled,
+    discardPendingKeys,
+    hasPendingChanges: hasKeyChanges,
+    hasAnyActiveKey,
+  } = useApiKeysStore();
 
   // Use selector pattern for reactivity
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
@@ -45,7 +69,8 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
 
   useEffect(() => {
     fetchConfig();
-  }, [fetchConfig]);
+    fetchKeyStatus();
+  }, [fetchConfig, fetchKeyStatus]);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -86,7 +111,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
 
   // Get effective value (pending or current)
   const getValue = <T,>(
-    section: 'simulation' | 'agent' | 'needs' | 'experiment' | 'llmCache' | 'actions',
+    section: 'simulation' | 'agent' | 'needs' | 'experiment' | 'llmCache' | 'actions' | 'economy',
     key: string,
     fallback: T
   ): T => {
@@ -188,10 +213,74 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
+        {/* LLM API Keys Section - Always visible */}
+        <ConfigSection title="LLM API Keys" icon="🔑" defaultExpanded={true}>
+          {/* Fallback mode warning */}
+          {!hasAnyActiveKey() && (
+            <FallbackModeInfo isTestMode={config?.simulation?.testMode} />
+          )}
+
+          {/* API Key inputs */}
+          {providers.map((provider) => (
+            <ApiKeyInput
+              key={provider.type}
+              provider={provider}
+              status={keyStatus[provider.type as LLMType]}
+              pendingKey={pendingKeys[provider.type as LLMType]}
+              onKeyChange={(key) => setPendingKey(provider.type as LLMType, key)}
+              onToggleDisabled={() => toggleDisabled(provider.type as LLMType)}
+              onClear={() => clearKey(provider.type as LLMType)}
+              isLoading={keysLoading}
+            />
+          ))}
+
+          {/* Apply/Discard keys buttons */}
+          {hasKeyChanges() && (
+            <div className="px-4 py-3 border-t border-gray-700/50 flex gap-2">
+              <button
+                onClick={applyKeys}
+                disabled={keysLoading}
+                className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {keysLoading ? 'Saving...' : 'Save Keys'}
+              </button>
+              <button
+                onClick={discardPendingKeys}
+                disabled={keysLoading}
+                className="px-3 py-1.5 text-sm bg-gray-700 text-gray-200 rounded hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Discard
+              </button>
+            </div>
+          )}
+
+          {/* Keys error */}
+          {keysError && (
+            <div className="px-4 py-2 text-xs text-red-300 bg-red-900/30">
+              {keysError}
+            </div>
+          )}
+
+          {/* Storage note */}
+          <div className="px-4 py-2 text-xs text-gray-500 text-center border-t border-gray-700/50">
+            Keys stored in browser localStorage
+          </div>
+        </ConfigSection>
+
+        {/* Agent System Prompt Section */}
+        <ConfigSection title="Agent System Prompt" icon="🧠" defaultExpanded={false}>
+          <PromptEditor />
+        </ConfigSection>
+
+        {/* Agent Deployment Section */}
+        <ConfigSection title="Agent Deployment" icon="🚀" defaultExpanded={false}>
+          <GenesisConfig />
+        </ConfigSection>
+
         {config && (
           <>
             {/* Simulation Section */}
-            <ConfigSection title="Simulation" icon="🎮" defaultExpanded={true}>
+            <ConfigSection title="Simulation" icon="🎮" defaultExpanded={false}>
               <ConfigInput
                 type="number"
                 label="Tick Interval"
@@ -381,6 +470,11 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
               />
             </ConfigSection>
 
+            {/* Personality Weights */}
+            <ConfigSection title="Personality Weights" icon="🎭" defaultExpanded={false}>
+              <PersonalityConfig />
+            </ConfigSection>
+
             {/* LLM Cache */}
             <ConfigSection title="LLM Cache" icon="💾">
               <ConfigInput
@@ -403,17 +497,80 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
               />
             </ConfigSection>
 
-            {/* Actions (Read-only for now) */}
-            <ConfigSection title="Action Costs" icon="⚡">
+            {/* Movement Costs */}
+            <ConfigSection title="Movement Costs" icon="🚶">
               <ConfigInput
                 type="number"
-                label="Move Energy Cost"
-                description="Energy spent per tile moved"
-                value={config.actions.move.energyCost}
-                onChange={() => {}}
-                disabled
+                label="Energy Cost"
+                description="Energy spent per tile moved. Higher = less wandering"
+                value={getValue('actions', 'move', config.actions.move).energyCost}
+                onChange={(v) => updateActions({ move: { ...config.actions.move, energyCost: v } })}
+                min={0}
+                max={10}
+                step={0.5}
                 unit="/tile"
               />
+              <ConfigInput
+                type="number"
+                label="Hunger Cost"
+                description="Hunger spent per tile moved. Exploration makes you hungry"
+                value={getValue('actions', 'move', config.actions.move).hungerCost}
+                onChange={(v) => updateActions({ move: { ...config.actions.move, hungerCost: v } })}
+                min={0}
+                max={5}
+                step={0.1}
+                unit="/tile"
+              />
+              <ConfigInput
+                type="number"
+                label="Consecutive Penalty"
+                description="Extra cost multiplier for repeated moves. 0.5 = +50% cost"
+                value={getValue('actions', 'move', config.actions.move).consecutivePenalty}
+                onChange={(v) => updateActions({ move: { ...config.actions.move, consecutivePenalty: v } })}
+                min={0}
+                max={2}
+                step={0.1}
+                unit="x"
+              />
+            </ConfigSection>
+
+            {/* Economy */}
+            <ConfigSection title="Currency Decay" icon="💸">
+              <ConfigInput
+                type="number"
+                label="Decay Rate"
+                description="% of balance lost per interval. Discourages hoarding"
+                value={(getValue('economy', 'currencyDecayRate', config.economy?.currencyDecayRate ?? 0.05) * 100)}
+                onChange={(v) => updateEconomy({ currencyDecayRate: v / 100 })}
+                min={0}
+                max={20}
+                step={1}
+                unit="%"
+              />
+              <ConfigInput
+                type="number"
+                label="Decay Interval"
+                description="Ticks between decay applications"
+                value={getValue('economy', 'currencyDecayInterval', config.economy?.currencyDecayInterval ?? 10)}
+                onChange={(v) => updateEconomy({ currencyDecayInterval: v })}
+                min={1}
+                max={100}
+                unit="ticks"
+              />
+              <ConfigInput
+                type="number"
+                label="Exempt Threshold"
+                description="Balance below this is exempt. Protects poor agents"
+                value={getValue('economy', 'currencyDecayThreshold', config.economy?.currencyDecayThreshold ?? 20)}
+                onChange={(v) => updateEconomy({ currencyDecayThreshold: v })}
+                min={0}
+                max={100}
+                unit="CITY"
+              />
+            </ConfigSection>
+
+            {/* Other Action Costs (Read-only) */}
+            <ConfigSection title="Other Action Costs" icon="⚡">
               <ConfigInput
                 type="number"
                 label="Gather Energy Cost"

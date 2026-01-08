@@ -15,6 +15,8 @@ import { useWorldStore, useAgents, useResourceSpawns, useShelters, type Agent, t
 const GRID_SIZE = 100; // 100x100 grid
 const TILE_WIDTH = 24; // Isometric tile width (2:1 ratio)
 const TILE_HEIGHT = 12; // Isometric tile height
+// Isometric grid center: at world (50,50), iso coords are (0, 600)
+const ISO_CENTER_Y = (GRID_SIZE / 2 + GRID_SIZE / 2) * (TILE_HEIGHT / 2); // 600
 
 // Agent/resource rendering sizes
 const AGENT_BASE_SIZE = 8;
@@ -72,8 +74,8 @@ export function ScientificIsometricCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Camera state
-  const [camera, setCamera] = useState({ x: 0, y: 0 });
+  // Camera state - center on grid (iso center is at y=600)
+  const [camera, setCamera] = useState({ x: 0, y: -ISO_CENTER_Y * 0.8 });
   const [zoom, setZoom] = useState(0.8);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -477,12 +479,38 @@ export function ScientificIsometricCanvas() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Handle wheel zoom
+  // Handle wheel zoom - zooms towards mouse position
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+
+    // Mouse position relative to canvas
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    // Canvas center (isometric uses different origin)
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 3;
+
+    // Calculate zoom change
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom((z) => Math.max(0.3, Math.min(2.5, z + delta)));
-  }, []);
+    const newZoom = Math.max(0.3, Math.min(2.5, zoom + delta));
+
+    // World point under the mouse before zoom
+    const worldX = (mouseX - centerX - camera.x) / zoom;
+    const worldY = (mouseY - centerY - camera.y) / zoom;
+
+    // New camera position to keep the same world point under the mouse
+    const newCameraX = mouseX - centerX - worldX * newZoom;
+    const newCameraY = mouseY - centerY - worldY * newZoom;
+
+    setZoom(newZoom);
+    setCamera({ x: newCameraX, y: newCameraY });
+  }, [camera, zoom]);
 
   // Handle pan
   const handleMouseDown = useCallback((e: React.MouseEvent) => {

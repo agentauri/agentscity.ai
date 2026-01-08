@@ -19,6 +19,9 @@ const adapters: Map<LLMType, LLMAdapter> = new Map();
 // Initialize adapters with configurable timeout
 function initAdapters(): void {
   const timeout = CONFIG.llm.defaultTimeoutMs;
+  // GLM needs longer timeout due to China network latency
+  const glmTimeout = Math.max(timeout, 60000);
+
   // Primary LLMs via API (reliable)
   adapters.set('claude', new ClaudeAPIAdapter(timeout));
   adapters.set('codex', new OpenAIAPIAdapter(timeout));
@@ -26,7 +29,7 @@ function initAdapters(): void {
   // Secondary LLMs via API
   adapters.set('deepseek', new DeepSeekAPIAdapter(timeout));
   adapters.set('qwen', new QwenAPIAdapter(timeout));
-  adapters.set('glm', new GLMAPIAdapter(timeout));
+  adapters.set('glm', new GLMAPIAdapter(glmTimeout)); // Extended timeout for China API
   adapters.set('grok', new GrokAPIAdapter(timeout));
 }
 

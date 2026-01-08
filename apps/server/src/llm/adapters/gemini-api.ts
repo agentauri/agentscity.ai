@@ -6,6 +6,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { BaseLLMAdapter, type RawPromptOptions, type RawPromptResult } from './base';
 import type { LLMType, LLMMethod } from '../types';
+import { getEffectiveKey, isKeyDisabled } from '../key-manager';
 
 export class GeminiAPIAdapter extends BaseLLMAdapter {
   readonly type: LLMType = 'gemini';
@@ -13,6 +14,7 @@ export class GeminiAPIAdapter extends BaseLLMAdapter {
   readonly name = 'Gemini (API)';
 
   private client: GoogleGenerativeAI | null = null;
+  private currentApiKey?: string;
   private readonly timeout: number;
 
   constructor(timeout = 30000) {
@@ -21,14 +23,18 @@ export class GeminiAPIAdapter extends BaseLLMAdapter {
   }
 
   private getClient(): GoogleGenerativeAI {
-    if (!this.client) {
-      this.client = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!);
+    const apiKey = getEffectiveKey('gemini');
+    // Recreate client if key changed
+    if (!this.client || this.currentApiKey !== apiKey) {
+      this.client = new GoogleGenerativeAI(apiKey!);
+      this.currentApiKey = apiKey;
     }
     return this.client;
   }
 
   async isAvailable(): Promise<boolean> {
-    return !!process.env.GOOGLE_AI_API_KEY;
+    if (isKeyDisabled('gemini')) return false;
+    return !!getEffectiveKey('gemini');
   }
 
   protected async callLLM(prompt: string): Promise<string> {

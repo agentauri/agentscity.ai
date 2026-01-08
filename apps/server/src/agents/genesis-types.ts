@@ -140,6 +140,13 @@ export interface GenesisConfig {
   requiredArchetypes?: string[];
 
   /**
+   * Use user-configured personality weights instead of LLM-generated personalities.
+   * When true, the personality from ChildSpecification is ignored and
+   * selectRandomPersonality() is used with runtime-configured weights.
+   */
+  useConfiguredPersonalities?: boolean;
+
+  /**
    * Temperature for LLM generation (default: 0.8)
    * Higher values encourage more diverse outputs
    */

@@ -25,6 +25,7 @@ import { updateAgent, killAgent } from '../db/queries/agents';
 import { getInventoryItem, removeFromInventory } from '../db/queries/inventory';
 import type { Agent } from '../db/schema';
 import type { WorldEvent } from '../cache/pubsub';
+import { getRuntimeConfig } from '../config';
 
 // Track consecutive ticks in critical state (for grace timer)
 const criticalTicksMap = new Map<string, { hunger: number; energy: number }>();
@@ -394,4 +395,113 @@ export function calculateSurvivalTicks(hunger: number, energy: number): number {
   const hungerTicks = hunger / CONFIG.hungerDecay;
   const energyTicks = energy / CONFIG.energyDecay;
   return Math.min(hungerTicks, energyTicks);
+}
+
+// =============================================================================
+// Currency Decay System
+// =============================================================================
+// Idle wealth loses value over time - this prevents hoarding and encourages
+// agents to actively spend/invest their CITY currency.
+// Agents with balance > threshold lose a % of their balance every N ticks.
+
+export interface CurrencyDecayResult {
+  agentId: string;
+  previousBalance: number;
+  newBalance: number;
+  decayAmount: number;
+  applied: boolean;
+  reason?: string;
+  event?: WorldEvent;
+}
+
+/**
+ * Apply currency decay to an agent.
+ * Called every tick, but only applies decay at configured intervals.
+ *
+ * @param agent - The agent to apply decay to
+ * @param tick - Current simulation tick
+ * @returns Decay result with event if decay was applied
+ */
+export async function applyCurrencyDecay(
+  agent: Agent,
+  tick: number
+): Promise<CurrencyDecayResult> {
+  // Get runtime config for live updates via API
+  const config = getRuntimeConfig();
+  const { currencyDecayRate, currencyDecayInterval, currencyDecayThreshold } =
+    config.economy;
+
+  // Only apply decay at configured intervals
+  if (tick % currencyDecayInterval !== 0) {
+    return {
+      agentId: agent.id,
+      previousBalance: agent.balance,
+      newBalance: agent.balance,
+      decayAmount: 0,
+      applied: false,
+      reason: 'Not a decay interval tick',
+    };
+  }
+
+  // Dead agents don't lose currency
+  if (agent.state === 'dead') {
+    return {
+      agentId: agent.id,
+      previousBalance: agent.balance,
+      newBalance: agent.balance,
+      decayAmount: 0,
+      applied: false,
+      reason: 'Agent is dead',
+    };
+  }
+
+  // Agents below threshold are exempt (don't punish the poor)
+  if (agent.balance <= currencyDecayThreshold) {
+    return {
+      agentId: agent.id,
+      previousBalance: agent.balance,
+      newBalance: agent.balance,
+      decayAmount: 0,
+      applied: false,
+      reason: `Balance ${agent.balance} below threshold ${currencyDecayThreshold}`,
+    };
+  }
+
+  // Calculate decay amount
+  const decayAmount = Math.floor(agent.balance * currencyDecayRate);
+
+  // Minimum decay of 1 CITY if rate would produce 0
+  const actualDecay = Math.max(1, decayAmount);
+
+  // Ensure we don't go below threshold
+  const newBalance = Math.max(currencyDecayThreshold, agent.balance - actualDecay);
+  const appliedDecay = agent.balance - newBalance;
+
+  // Update agent balance in database
+  await updateAgent(agent.id, { balance: newBalance });
+
+  // Create event for visibility
+  const event: WorldEvent = {
+    id: uuid(),
+    type: 'currency_decay',
+    tick,
+    timestamp: Date.now(),
+    agentId: agent.id,
+    payload: {
+      previousBalance: agent.balance,
+      newBalance,
+      decayAmount: appliedDecay,
+      decayRate: currencyDecayRate,
+      reason: 'Idle wealth loses value over time. Spend it or lose it.',
+    },
+  };
+
+  return {
+    agentId: agent.id,
+    previousBalance: agent.balance,
+    newBalance,
+    decayAmount: appliedDecay,
+    applied: true,
+    event,
+  };
 }

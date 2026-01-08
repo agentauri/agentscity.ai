@@ -5,6 +5,7 @@
 
 import { BaseLLMAdapter } from './base';
 import type { LLMType, LLMMethod } from '../types';
+import { getEffectiveKey, isKeyDisabled } from '../key-manager';
 
 export class DeepSeekAPIAdapter extends BaseLLMAdapter {
   readonly type: LLMType = 'deepseek';
@@ -21,10 +22,11 @@ export class DeepSeekAPIAdapter extends BaseLLMAdapter {
   }
 
   private getApiKey(): string | undefined {
-    return process.env.DEEPSEEK_API_KEY;
+    return getEffectiveKey('deepseek');
   }
 
   async isAvailable(): Promise<boolean> {
+    if (isKeyDisabled('deepseek')) return false;
     return !!this.getApiKey();
   }
 

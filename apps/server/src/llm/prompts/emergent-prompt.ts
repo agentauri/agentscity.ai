@@ -139,6 +139,51 @@ function getSensoryDescriptions(obs: AgentObservation): SensoryState {
   };
 }
 
+/**
+ * Calculate survival runway - how many ticks until critical state
+ * Returns sensory descriptions of urgency, not raw numbers
+ */
+function getSurvivalRunway(obs: AgentObservation): string[] {
+  const { hunger, energy, health } = obs.self;
+  const lines: string[] = [];
+
+  // Hunger runway (decay rate ~1 per tick)
+  const hungerDecayRate = 1; // Base decay
+  const ticksUntilCriticalHunger = Math.floor(Math.max(0, hunger - 10) / hungerDecayRate);
+
+  // Energy runway (decay rate ~0.5 per tick base, more if hungry)
+  const baseEnergyDecay = 0.5;
+  const extraDrainIfHungry = hunger < 20 ? 1 : 0;
+  const energyDecayRate = baseEnergyDecay + extraDrainIfHungry;
+  const ticksUntilCriticalEnergy = Math.floor(Math.max(0, energy - 10) / energyDecayRate);
+
+  // Convert ticks to sensory urgency descriptions
+  if (ticksUntilCriticalHunger <= 3) {
+    lines.push('**⚠️ URGENT**: Your body is failing. You have mere moments to find sustenance.');
+  } else if (ticksUntilCriticalHunger <= 10) {
+    lines.push('**Warning**: At this rate, starvation is imminent. Your body sends desperate signals.');
+  } else if (ticksUntilCriticalHunger <= 20) {
+    lines.push('You sense that without food soon, your situation will become dire.');
+  }
+
+  if (ticksUntilCriticalEnergy <= 3) {
+    lines.push('**⚠️ URGENT**: Exhaustion overwhelms you. You must rest or collapse.');
+  } else if (ticksUntilCriticalEnergy <= 10) {
+    lines.push('**Warning**: Your energy reserves are nearly depleted. Rest cannot wait much longer.');
+  } else if (ticksUntilCriticalEnergy <= 20) {
+    lines.push('You feel your energy fading. Continued exertion will leave you helpless.');
+  }
+
+  // Health warning if already damaged
+  if (health < 50 && health > 20) {
+    lines.push('Your wounds weaken you. Without healing, every moment is borrowed time.');
+  } else if (health <= 20) {
+    lines.push('**⚠️ CRITICAL**: Death\'s shadow looms. Your body is failing.');
+  }
+
+  return lines;
+}
+
 // =============================================================================
 // System Prompt (World Physics Only)
 // =============================================================================
@@ -173,6 +218,8 @@ These are the immutable laws of this world:
 
 **Energy**
 - Every action you take costs energy.
+- Movement is especially draining. Wandering without purpose exhausts you quickly.
+- Repeated movement in quick succession is even more exhausting.
 - When energy reaches zero, your body cannot sustain itself.
 - You will collapse and your health will deteriorate.
 
@@ -191,6 +238,7 @@ These are the immutable laws of this world:
 - CITY is the currency of this world.
 - It can be earned through labor.
 - It can be exchanged for goods at shelters.
+- Idle wealth loses value over time. Currency that sits unused slowly fades away.
 
 **Other Beings**
 - Other agents exist in this world with their own goals.
@@ -266,6 +314,16 @@ export function buildEmergentObservationPrompt(obs: AgentObservation): string {
     lines.push(`- ${sensation}`);
   }
   lines.push(`- ${sensory.wealth}`);
+
+  // Survival runway - urgency without prescriptions
+  const survivalWarnings = getSurvivalRunway(obs);
+  if (survivalWarnings.length > 0) {
+    lines.push('');
+    lines.push('**Your Body\'s Warnings**');
+    for (const warning of survivalWarnings) {
+      lines.push(`- ${warning}`);
+    }
+  }
 
   // Position context (spatial awareness)
   lines.push('');

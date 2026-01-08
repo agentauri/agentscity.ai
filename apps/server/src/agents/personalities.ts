@@ -96,6 +96,61 @@ if (Math.abs(totalWeight - 1.0) > 0.01) {
 }
 
 // =============================================================================
+// Runtime Weight Configuration
+// =============================================================================
+
+/** Runtime-modifiable personality weights */
+let runtimeWeights: Record<PersonalityTrait, number> = {
+  aggressive: 0.12,
+  cooperative: 0.15,
+  cautious: 0.12,
+  explorer: 0.10,
+  social: 0.11,
+  neutral: 0.40,
+};
+
+/**
+ * Get current personality weights (runtime-modifiable)
+ */
+export function getPersonalityWeights(): Record<PersonalityTrait, number> {
+  return { ...runtimeWeights };
+}
+
+/**
+ * Set personality weights at runtime
+ * Automatically normalizes to sum to 1.0
+ */
+export function setPersonalityWeights(weights: Partial<Record<PersonalityTrait, number>>): void {
+  // Merge with current weights
+  const merged = { ...runtimeWeights, ...weights };
+
+  // Normalize to sum to 1.0
+  const total = Object.values(merged).reduce((sum, w) => sum + w, 0);
+  if (total > 0) {
+    for (const trait of Object.keys(merged) as PersonalityTrait[]) {
+      runtimeWeights[trait] = merged[trait] / total;
+    }
+  }
+
+  console.log('[Personalities] Updated weights:', runtimeWeights);
+}
+
+/**
+ * Reset weights to defaults
+ */
+export function resetPersonalityWeights(): void {
+  runtimeWeights = {
+    aggressive: 0.12,
+    cooperative: 0.15,
+    cautious: 0.12,
+    explorer: 0.10,
+    social: 0.11,
+    neutral: 0.40,
+  };
+  console.log('[Personalities] Reset weights to defaults');
+}
+
+// =============================================================================
 // Personality Selection
 // =============================================================================
 
@@ -112,19 +167,21 @@ function seededRandom(seed: number): () => number {
 }
 
 /**
- * Select a random personality based on configured weights
+ * Select a random personality based on runtime-configured weights
  *
  * @param seed - Optional seed for reproducible selection
  * @returns The selected personality trait
  */
 export function selectRandomPersonality(seed?: number): PersonalityTrait {
   const random = seed !== undefined ? seededRandom(seed)() : Math.random();
+  const weights = getPersonalityWeights();
+  const traits = Object.keys(weights) as PersonalityTrait[];
 
   let cumulative = 0;
-  for (const config of PERSONALITY_CONFIGS) {
-    cumulative += config.weight;
+  for (const trait of traits) {
+    cumulative += weights[trait];
     if (random < cumulative) {
-      return config.trait;
+      return trait;
     }
   }
 

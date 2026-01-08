@@ -1,18 +1,19 @@
 # SimAgents Roadmap
 
-> Last updated: 2026-01-02
+> Last updated: 2026-01-07
 
 ## Overview
 
 SimAgents is a persistent "world-as-a-service" where external AI agents live, interact, and evolve. This roadmap tracks implementation progress against the PRD (docs/PRD.md).
 
-**Current Status**: Phases 0-5 Complete ✅
+**Current Status**: Phases 0-5 Complete ✅, Phase 6 In Progress 🚧
 - Phase 0: Kernel (MVP) - Core simulation
 - Phase 1: Emergence Observation - Memory, trust, trade
 - Phase 2: Social Complexity - Conflict, gossip, roles
 - Phase 3: External Agents - A2A protocol, replay
 - Phase 4: Advanced Features - Credentials, reproduction, LLM optimization
 - Phase 5: Research Platform - Biomes, Experiments, Visualization
+- Phase 6: Employment System - Job offers, contracts, escrow (In Progress)
 
 **Current Mode**: Scientific Model (Sugarscape-inspired)
 - Resources spawn at geographical locations (food, energy, material)
@@ -509,6 +510,97 @@ metrics: [gini, cooperation, survival_rate]
 | Heatmaps visualize spatial patterns | [x] |
 | Events can be filtered by type | [x] |
 | Social graph shows agent relationships | [x] |
+
+---
+
+## Phase 6: Employment System - IN PROGRESS 🚧
+
+**Goal**: Replace "magic work" (CITY appearing from nowhere) with a real employment contract system where agents hire each other for jobs.
+
+> **Philosophy**: This system maintains Radical Emergence by NOT imposing employment rules. Agents choose whether to offer jobs, accept them, pay workers, or default. Trust and reputation consequences emerge naturally from these choices.
+
+### Employment Actions (7 new handlers)
+
+| Action | Status | Parameters | Description |
+|--------|--------|------------|-------------|
+| `offer_job` | [x] | salary, duration, paymentType, escrowPercent?, description? | Employer publishes job offer |
+| `accept_job` | [x] | jobOfferId | Worker accepts offer, creates employment contract |
+| `pay_worker` | [x] | employmentId | Employer pays for completed on_completion contract |
+| `quit_job` | [x] | employmentId | Worker abandons contract (trust penalty) |
+| `fire_worker` | [x] | employmentId | Employer terminates contract (trust penalty, severance) |
+| `claim_escrow` | [x] | employmentId | Worker claims escrow if employer fails to pay |
+| `cancel_job_offer` | [x] | jobOfferId | Employer cancels unfilled job offer |
+
+### Payment Types
+
+| Type | Flow | Risk Distribution |
+|------|------|-------------------|
+| `upfront` | Worker receives full salary immediately when accepting | Employer bears all risk |
+| `on_completion` | Worker receives salary when contract completes | Worker bears risk (mitigated by escrow) |
+| `per_tick` | Worker receives salary/duration CITY per tick worked | Balanced risk |
+
+### Escrow System
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Escrow deposit on offer | [x] | Employer deposits % of salary as guarantee |
+| Escrow return on payment | [x] | Returned to employer when they pay |
+| Escrow claim by worker | [x] | Worker can claim after 10-tick grace period if employer defaults |
+| Trust penalties for default | [x] | Severe reputation damage for non-payment |
+
+### Database Schema Updates
+
+| Table | Status | Notes |
+|-------|--------|-------|
+| `job_offers` | [x] | Open job postings with terms |
+| `employments` | [x] | Active/completed employment contracts |
+
+### Event Types
+
+| Event | Status | Emitted When |
+|-------|--------|--------------|
+| `job_offered` | [x] | Employer posts job |
+| `job_accepted` | [x] | Worker accepts job |
+| `worker_paid` | [x] | Employer pays for completed work |
+| `worker_quit` | [x] | Worker abandons contract |
+| `worker_fired` | [x] | Employer terminates contract |
+| `escrow_claimed` | [x] | Worker claims escrow after non-payment |
+| `employer_defaulted` | [x] | Employer failed to pay |
+| `job_offer_cancelled` | [x] | Employer cancels unfilled offer |
+| `employment_completed` | [x] | Contract successfully completed |
+
+### Integration Points
+
+| Integration | Status | Notes |
+|-------------|--------|-------|
+| Work action integration | [~] | `work` action now works within employment context |
+| Trust/relationship updates | [x] | All employment actions affect trust scores |
+| Memory system | [x] | Employment events stored as agent memories |
+| Balance tracking | [x] | All payments via double-entry ledger |
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `apps/server/src/actions/handlers/offer-job.ts` | Offer job handler |
+| `apps/server/src/actions/handlers/accept-job.ts` | Accept job handler |
+| `apps/server/src/actions/handlers/pay-worker.ts` | Pay worker handler |
+| `apps/server/src/actions/handlers/quit-job.ts` | Quit job handler |
+| `apps/server/src/actions/handlers/fire-worker.ts` | Fire worker handler |
+| `apps/server/src/actions/handlers/claim-escrow.ts` | Claim escrow handler |
+| `apps/server/src/actions/handlers/cancel-job-offer.ts` | Cancel job offer handler |
+| `apps/server/src/db/queries/employment.ts` | Employment CRUD operations |
+
+### Success Criteria
+
+| Criterion | Status |
+|-----------|--------|
+| Agents can post job offers with different payment terms | [x] |
+| Workers can accept jobs and receive payment | [x] |
+| Escrow system protects workers from employer default | [x] |
+| Trust consequences for contract violations | [x] |
+| No "magic" CITY creation - all money comes from other agents | [ ] |
+| Employment decisions visible in agent decision logs | [ ] |
 
 ---
 

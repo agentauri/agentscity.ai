@@ -13,7 +13,7 @@
  * - Tap to select agent
  */
 
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useWorldStore, useAgents, useResourceSpawns, useShelters, type BiomeType, BIOME_COLORS } from '../../stores/world';
 import { HeatmapLayer, HeatmapControls } from './HeatmapLayer';
 
@@ -21,6 +21,7 @@ import { HeatmapLayer, HeatmapControls } from './HeatmapLayer';
 const TILE_SIZE = 12; // Pixels per tile
 const GRID_SIZE = 100; // 100x100 grid
 const AGENT_RADIUS = 5;
+const GRID_CENTER = (GRID_SIZE * TILE_SIZE) / 2; // 600 - center of grid in pixels
 
 // Colors
 const COLORS = {
@@ -58,12 +59,14 @@ export function ScientificCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Camera state
-  const [camera, setCamera] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+  // Camera state - start centered on grid (offset = -gridCenter * zoom)
+  const initialZoom = 0.4;
+  const [camera, setCamera] = useState({ x: -GRID_CENTER * initialZoom, y: -GRID_CENTER * initialZoom });
+  const [zoom, setZoom] = useState(initialZoom);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [cameraStart, setCameraStart] = useState({ x: 0, y: 0 });
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
 
   // Touch state for pinch zoom
   const touchRef = useRef<{
@@ -102,6 +105,9 @@ export function ScientificCanvas() {
     if (!ctx) return;
 
     const { width, height } = canvas;
+
+    // Skip if canvas has no size yet
+    if (width === 0 || height === 0) return;
 
     // Clear
     ctx.fillStyle = COLORS.background;
@@ -341,15 +347,16 @@ export function ScientificCanvas() {
       });
     }
 
-  }, [agents, agentsByPosition, resourceSpawns, shelters, tick, selectedAgentId, camera, zoom]);
+  }, [agents, agentsByPosition, resourceSpawns, shelters, tick, selectedAgentId, camera, zoom, canvasSize]);
 
-  // Handle resize
-  useEffect(() => {
+  // Handle resize - use layoutEffect to set size before paint
+  useLayoutEffect(() => {
     const handleResize = () => {
       if (!containerRef.current || !canvasRef.current) return;
       const { width, height } = containerRef.current.getBoundingClientRect();
       canvasRef.current.width = width;
       canvasRef.current.height = height;
+      setCanvasSize({ width, height });
     };
 
     handleResize();
@@ -357,12 +364,38 @@ export function ScientificCanvas() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Handle wheel zoom
+  // Handle wheel zoom - zooms towards mouse position
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+
+    // Mouse position relative to canvas
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    // Canvas center
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+
+    // Calculate zoom change
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom((z) => Math.max(0.5, Math.min(3, z + delta)));
-  }, []);
+    const newZoom = Math.max(0.5, Math.min(3, zoom + delta));
+
+    // World point under the mouse before zoom
+    const worldX = (mouseX - centerX - camera.x) / zoom;
+    const worldY = (mouseY - centerY - camera.y) / zoom;
+
+    // New camera position to keep the same world point under the mouse
+    const newCameraX = mouseX - centerX - worldX * newZoom;
+    const newCameraY = mouseY - centerY - worldY * newZoom;
+
+    setZoom(newZoom);
+    setCamera({ x: newCameraX, y: newCameraY });
+  }, [camera, zoom]);
 
   // Handle mouse pan
   const handleMouseDown = useCallback((e: React.MouseEvent) => {

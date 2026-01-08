@@ -14,11 +14,21 @@ const ALWAYS_VISIBLE_LLMS = ['claude', 'codex', 'gemini'];
 const INITIAL_POSITION = { x: 20, y: 72 };
 
 /** Minimum panel width */
-const MIN_PANEL_WIDTH = 340;
+const MIN_PANEL_WIDTH = 480;
 
 // =============================================================================
 // Strategy Icons (defined outside component to prevent recreation)
 // =============================================================================
+
+/** Personality trait colors matching the config panel */
+const PERSONALITY_COLORS: Record<string, string> = {
+  aggressive: '#ef4444', // red
+  cooperative: '#22c55e', // green
+  cautious: '#eab308',   // yellow
+  explorer: '#3b82f6',   // blue
+  social: '#a855f7',     // purple
+  neutral: '#6b7280',    // gray
+};
 
 const STRATEGY_ICONS: Record<string, ReactNode> = {
   worker: (
@@ -194,6 +204,19 @@ export function AgentSummaryTable() {
     return strategies;
   }, [visibleAgents, events]);
 
+  // Calculate personality distribution (only for living agents with personalities)
+  const personalityDistribution = useMemo(() => {
+    const dist: Record<string, number> = {};
+    let hasAnyPersonality = false;
+    for (const agent of visibleAgents) {
+      if (agent.personality) {
+        dist[agent.personality] = (dist[agent.personality] || 0) + 1;
+        hasAnyPersonality = true;
+      }
+    }
+    return hasAnyPersonality ? dist : null;
+  }, [visibleAgents]);
+
   // Memoized select handler to avoid inline function in render
   const handleSelectAgent = useCallback((agentId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -255,6 +278,43 @@ export function AgentSummaryTable() {
         </div>
       </div>
 
+      {/* Personality Distribution Bar */}
+      {!isCollapsed && personalityDistribution && (
+        <div className="px-3 pt-2 pb-1 border-b border-city-border/30">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-[10px] text-city-text-muted uppercase tracking-wider">Personalities</span>
+          </div>
+          <div className="flex h-2 rounded overflow-hidden bg-city-bg">
+            {Object.entries(personalityDistribution).map(([trait, count]) => {
+              const total = Object.values(personalityDistribution).reduce((a, b) => a + b, 0);
+              const percentage = (count / total) * 100;
+              return (
+                <div
+                  key={trait}
+                  className="h-full transition-all duration-300"
+                  style={{
+                    width: `${percentage}%`,
+                    backgroundColor: PERSONALITY_COLORS[trait] || '#6b7280',
+                  }}
+                  title={`${trait}: ${count} (${Math.round(percentage)}%)`}
+                />
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+            {Object.entries(personalityDistribution).map(([trait, count]) => (
+              <div key={trait} className="flex items-center gap-1">
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: PERSONALITY_COLORS[trait] || '#6b7280' }}
+                />
+                <span className="text-[10px] text-city-text-muted capitalize">{trait}: {count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       {!isCollapsed && (
         <div className="p-3">
@@ -262,6 +322,9 @@ export function AgentSummaryTable() {
             <thead>
               <tr className="text-city-text-muted text-[10px] uppercase tracking-wider">
                 <th className="text-left pb-2 font-medium">Agent</th>
+                <th className="text-center pb-2 font-medium">HP</th>
+                <th className="text-center pb-2 font-medium">HUN</th>
+                <th className="text-center pb-2 font-medium">NRG</th>
                 <th className="text-right pb-2 font-medium">Balance</th>
                 <th className="text-left pb-2 pl-4 font-medium">Strategy</th>
               </tr>
@@ -275,24 +338,10 @@ export function AgentSummaryTable() {
                   <React.Fragment key={agent.id}>
                     <tr
                       className="group hover:bg-city-surface-hover/50 transition-colors cursor-pointer"
-                      onClick={(e) => toggleAgentExpand(agent.id, e)}
+                      onClick={(e) => handleSelectAgent(agent.id, e)}
                     >
                       <td className="py-1.5 rounded-l">
                         <div className="flex items-center gap-2">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="10"
-                            height="10"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className={`text-city-text-muted transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                          >
-                            <polyline points="9 18 15 12 9 6" />
-                          </svg>
                           <div
                             className="w-2.5 h-2.5 rounded-full ring-1 ring-white/10"
                             style={{ backgroundColor: agent.color }}
@@ -301,6 +350,21 @@ export function AgentSummaryTable() {
                             {displayName}
                           </span>
                         </div>
+                      </td>
+                      <td className="text-center py-1.5">
+                        <span className={`font-mono text-xs font-medium ${agent.health < 30 ? 'text-status-error' : agent.health < 60 ? 'text-status-warning' : 'text-status-success'}`}>
+                          {Math.round(agent.health)}
+                        </span>
+                      </td>
+                      <td className="text-center py-1.5">
+                        <span className={`font-mono text-xs font-medium ${agent.hunger < 20 ? 'text-status-error' : agent.hunger < 40 ? 'text-status-warning' : 'text-city-text'}`}>
+                          {Math.round(agent.hunger)}
+                        </span>
+                      </td>
+                      <td className="text-center py-1.5">
+                        <span className={`font-mono text-xs font-medium ${agent.energy < 20 ? 'text-status-error' : agent.energy < 40 ? 'text-status-warning' : 'text-city-text'}`}>
+                          {Math.round(agent.energy)}
+                        </span>
                       </td>
                       <td className="text-right py-1.5">
                         <span className="font-mono text-xs">
@@ -320,7 +384,7 @@ export function AgentSummaryTable() {
                     {/* Expanded details */}
                     {isExpanded && (
                       <tr>
-                        <td colSpan={3} className="pb-2">
+                        <td colSpan={6} className="pb-2">
                           <div className="ml-6 pl-3 border-l-2 border-city-border/30 py-2 space-y-2">
                             {/* Position */}
                             <div className="flex items-center gap-4 text-xs">
@@ -386,7 +450,7 @@ export function AgentSummaryTable() {
               })}
               {sortedAgents.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="text-center text-city-text-muted py-6 text-xs">
+                  <td colSpan={6} className="text-center text-city-text-muted py-6 text-xs">
                     No active agents
                   </td>
                 </tr>

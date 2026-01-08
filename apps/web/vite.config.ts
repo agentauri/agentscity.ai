@@ -8,7 +8,7 @@ export default defineConfig({
     host: true, // Allow external connections (for remote testing)
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3002',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
         secure: false,
         ws: true,

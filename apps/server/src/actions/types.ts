@@ -32,7 +32,15 @@ export type ActionType =
   // Phase 4: Gossip Protocol (§35)
   | 'spread_gossip'
   // Phase 4: Reproduction (§36)
-  | 'spawn_offspring';
+  | 'spawn_offspring'
+  // Employment System
+  | 'offer_job'
+  | 'accept_job'
+  | 'pay_worker'
+  | 'claim_escrow'
+  | 'quit_job'
+  | 'fire_worker'
+  | 'cancel_job_offer';
 
 // =============================================================================
 // Action Parameters
@@ -155,6 +163,41 @@ export interface SpawnOffspringParams {
   mutationIntensity?: number; // 0.0 (no mutations) to 1.0 (heavy mutations)
 }
 
+// Employment System Parameters
+
+export interface OfferJobParams {
+  salary: number; // Total CITY offered
+  duration: number; // Ticks of work required
+  paymentType: 'upfront' | 'on_completion' | 'per_tick';
+  escrowPercent?: number; // 0-100, % of salary locked as guarantee
+  expiresInTicks?: number; // null = never expires
+  description?: string; // Optional job description (emergent)
+}
+
+export interface AcceptJobParams {
+  jobOfferId: string; // ID of the job offer to accept
+}
+
+export interface PayWorkerParams {
+  employmentId: string; // ID of the employment to pay
+}
+
+export interface ClaimEscrowParams {
+  employmentId: string; // ID of the employment to claim escrow from
+}
+
+export interface QuitJobParams {
+  employmentId: string; // ID of the employment to quit
+}
+
+export interface FireWorkerParams {
+  employmentId: string; // ID of the employment to terminate
+}
+
+export interface CancelJobOfferParams {
+  jobOfferId: string; // ID of the job offer to cancel
+}
+
 export type ActionParams =
   | MoveParams
   | BuyParams
@@ -173,7 +216,15 @@ export type ActionParams =
   | IssueCredentialParams
   | RevokeCredentialParams
   | SpreadGossipParams
-  | SpawnOffspringParams;
+  | SpawnOffspringParams
+  // Employment System
+  | OfferJobParams
+  | AcceptJobParams
+  | PayWorkerParams
+  | ClaimEscrowParams
+  | QuitJobParams
+  | FireWorkerParams
+  | CancelJobOfferParams;
 
 // =============================================================================
 // Action Intent

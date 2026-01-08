@@ -5,6 +5,7 @@
 
 import { BaseLLMAdapter } from './base';
 import type { LLMType, LLMMethod } from '../types';
+import { getEffectiveKey, isKeyDisabled } from '../key-manager';
 
 export class GrokAPIAdapter extends BaseLLMAdapter {
   readonly type: LLMType = 'grok';
@@ -22,10 +23,11 @@ export class GrokAPIAdapter extends BaseLLMAdapter {
   }
 
   private getApiKey(): string | undefined {
-    return process.env.GROK_API_KEY;
+    return getEffectiveKey('grok');
   }
 
   async isAvailable(): Promise<boolean> {
+    if (isKeyDisabled('grok')) return false;
     return !!this.getApiKey();
   }
 

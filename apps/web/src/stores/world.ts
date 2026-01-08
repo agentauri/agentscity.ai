@@ -16,6 +16,7 @@ export interface Agent {
   balance: number;
   state: string;
   color: string;
+  personality?: string | null;
 }
 
 export interface Location {

@@ -18,6 +18,7 @@ import {
   TRUST_EVENT_TYPES,
   CONFLICT_EVENT_TYPES,
 } from '../../stores/visualization';
+import { useDraggablePanel } from '../../hooks/useDraggablePanel';
 
 // Grid configuration (must match ScientificCanvas)
 const TILE_SIZE = 12;
@@ -266,6 +267,11 @@ export function HeatmapControls() {
     heatmapEnabled,
   } = useVisualizationStore();
 
+  const { position, handlers } = useDraggablePanel({
+    initialPosition: { x: 20, y: 110 },
+    clampToViewport: true,
+  });
+
   const metrics: { value: HeatmapMetric; label: string; icon: string }[] = [
     { value: 'none', label: 'Off', icon: '⚫' },
     { value: 'agent_density', label: 'Agents', icon: '👥' },
@@ -276,18 +282,25 @@ export function HeatmapControls() {
   ];
 
   return (
-    <div className="bg-city-surface/95 backdrop-blur-sm rounded-lg border border-city-border p-3">
-      <div className="flex items-center justify-between mb-2">
+    <div
+      className="fixed bg-city-surface/95 backdrop-blur-sm rounded-lg border border-city-border p-3"
+      style={{ left: position.x, top: position.y, zIndex: 100 }}
+    >
+      <div
+        className={`flex items-center justify-between gap-4 cursor-move ${heatmapEnabled ? 'mb-2' : ''}`}
+        onMouseDown={handlers.onDragStart}
+        onPointerDown={handlers.onDragStart}
+      >
         <span className="text-xs font-medium text-city-text">Heatmap</span>
         <button
           onClick={toggleHeatmap}
-          className={`w-8 h-4 rounded-full transition-colors ${
+          className={`relative w-8 h-4 rounded-full transition-colors ${
             heatmapEnabled ? 'bg-city-accent' : 'bg-city-border'
           }`}
         >
           <div
-            className={`w-3 h-3 rounded-full bg-white transition-transform ${
-              heatmapEnabled ? 'translate-x-4' : 'translate-x-0.5'
+            className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+              heatmapEnabled ? 'left-4' : 'left-0.5'
             }`}
           />
         </button>

@@ -6,6 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BaseLLMAdapter, type LLMCallResult, type RawPromptOptions, type RawPromptResult } from './base';
 import type { LLMType, LLMMethod } from '../types';
+import { getEffectiveKey, isKeyDisabled } from '../key-manager';
 
 const MODEL_NAME = 'claude-3-5-haiku-20241022';
 
@@ -23,14 +24,20 @@ export class ClaudeAPIAdapter extends BaseLLMAdapter {
   }
 
   private getClient(): Anthropic {
-    if (!this.client) {
-      this.client = new Anthropic();
+    const apiKey = getEffectiveKey('claude');
+    // Recreate client if key changed
+    if (!this.client || this.currentApiKey !== apiKey) {
+      this.client = new Anthropic({ apiKey });
+      this.currentApiKey = apiKey;
     }
     return this.client;
   }
 
+  private currentApiKey?: string;
+
   async isAvailable(): Promise<boolean> {
-    return !!process.env.ANTHROPIC_API_KEY;
+    if (isKeyDisabled('claude')) return false;
+    return !!getEffectiveKey('claude');
   }
 
   protected async callLLM(prompt: string): Promise<string> {

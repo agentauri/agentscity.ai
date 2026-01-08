@@ -2,7 +2,10 @@
  * Move Action Handler
  *
  * Moves agent to adjacent position.
- * Cost: 1 energy + 0.5 hunger per tile
+ * Costs are configurable via CONFIG.actions.move:
+ * - energyCost: base energy per tile (default: 2)
+ * - hungerCost: hunger per tile (default: 0.5)
+ * - consecutivePenalty: extra multiplier if last action was also move (default: 0.5 = +50%)
  */
 
 import { v4 as uuid } from 'uuid';
@@ -10,10 +13,7 @@ import type { ActionIntent, ActionResult, MoveParams } from '../types';
 import type { Agent } from '../../db/schema';
 import { isValidPosition, getPath, getDistance } from '../../world/grid';
 import { getVitalsPenalty } from '../utils/vitals-penalty';
-
-// Movement costs per tile
-const ENERGY_PER_TILE = 1;
-const HUNGER_PER_TILE = 0.5; // Exploring makes you hungry
+import { getRuntimeConfig } from '../../config';
 
 export async function handleMove(
   intent: ActionIntent<MoveParams>,
@@ -52,14 +52,29 @@ export async function handleMove(
   // Take only the first step
   const nextStep = path[0];
 
+  // Get base costs from runtime config (allows live updates via API)
+  const config = getRuntimeConfig();
+  const { energyCost: baseEnergyCost, hungerCost: baseHungerCost, consecutivePenalty } = config.actions.move;
+
+  // Check for consecutive move penalty: if agent is already walking, they're spamming move
+  const isConsecutiveMove = agent.state === 'walking';
+  const consecutiveMultiplier = isConsecutiveMove ? (1 + consecutivePenalty) : 1;
+
   // Apply vitals penalty to energy cost
   const penalty = getVitalsPenalty(agent);
-  const energyCost = Math.ceil(ENERGY_PER_TILE * penalty.multiplier);
+  const energyCost = Math.ceil(baseEnergyCost * penalty.multiplier * consecutiveMultiplier);
 
-  // Check if agent has enough energy (with penalty applied)
+  // Check if agent has enough energy (with all penalties applied)
   if (agent.energy < energyCost) {
-    const penaltyInfo = penalty.hasPenalty
-      ? ` (base: ${ENERGY_PER_TILE}, +${Math.round((penalty.multiplier - 1) * 100)}% penalty due to low vitals)`
+    const penaltyDetails: string[] = [];
+    if (penalty.hasPenalty) {
+      penaltyDetails.push(`+${Math.round((penalty.multiplier - 1) * 100)}% low vitals`);
+    }
+    if (isConsecutiveMove) {
+      penaltyDetails.push(`+${Math.round(consecutivePenalty * 100)}% consecutive move`);
+    }
+    const penaltyInfo = penaltyDetails.length > 0
+      ? ` (base: ${baseEnergyCost}, ${penaltyDetails.join(', ')})`
       : '';
     return {
       success: false,
@@ -70,8 +85,8 @@ export async function handleMove(
   // Calculate remaining distance after this step
   const remainingDistance = getDistance(nextStep, finalDestination);
 
-  // Calculate hunger cost
-  const hungerCost = HUNGER_PER_TILE;
+  // Calculate hunger cost (also affected by consecutive penalty)
+  const hungerCost = baseHungerCost * consecutiveMultiplier;
 
   // Success - move one step towards destination
   return {
@@ -102,6 +117,14 @@ export async function handleMove(
             ? {
                 multiplier: penalty.multiplier,
                 breakdown: penalty.breakdown,
+              }
+            : undefined,
+          // Include consecutive move penalty for analytics
+          consecutiveMovePenalty: isConsecutiveMove
+            ? {
+                multiplier: consecutiveMultiplier,
+                penalty: consecutivePenalty,
+                reason: 'Repeated movement is inefficient - consider resting or doing something useful',
               }
             : undefined,
         },

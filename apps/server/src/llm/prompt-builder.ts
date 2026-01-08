@@ -44,6 +44,10 @@ import {
   isPersonalityEnabled,
   type PersonalityTrait,
 } from '../agents/personalities';
+import {
+  hasCustomPrompt,
+  getEffectiveSystemPrompt,
+} from './prompt-manager';
 
 // =============================================================================
 // Types for Extended Prompt Building
@@ -58,11 +62,16 @@ export interface PromptBuildContext {
 
 /**
  * Build the system prompt that defines agent behavior
- * Uses emergent prompt when enabled, otherwise uses prescriptive prompt
+ * Uses custom prompt if set, then emergent prompt when enabled, otherwise prescriptive prompt
  *
  * @param personality - Optional personality trait to inject into system prompt
  */
 export function buildSystemPrompt(personality?: PersonalityTrait | null): string {
+  // Check if a custom prompt is set by user
+  if (hasCustomPrompt()) {
+    return getEffectiveSystemPrompt(personality);
+  }
+
   // Check if emergent prompt mode is enabled
   if (isEmergentPromptEnabled()) {
     // Personality is now supported in emergent mode
@@ -106,8 +115,15 @@ Respond with ONLY a JSON object. No other text. Format:
 - buy: Purchase items with CITY currency. REQUIRES being at a SHELTER! Params: { "itemType": "food"|"water"|"medicine", "quantity": number }
 - consume: Use items FROM YOUR INVENTORY to restore needs. REQUIRES having items first! Params: { "itemType": "food"|"water"|"medicine" }
 - sleep: Rest to restore energy. Params: { "duration": 1-10 }
-- work: Work to earn CITY currency. REQUIRES being at a SHELTER! Params: { "duration": 1-5 }
+- work: Work on your active employment contract. REQUIRES having an active job! Params: {} (works on oldest contract)
 - trade: Exchange items with a nearby agent. Params: { "targetAgentId": string, "offeringItemType": string, "offeringQuantity": number, "requestingItemType": string, "requestingQuantity": number }
+- offer_job: Post a job offer for other agents to accept. Params: { "salary": number, "duration": number, "paymentType": "upfront"|"on_completion"|"per_tick", "escrowPercent"?: 0-100, "description"?: string }
+- accept_job: Accept an available job offer. Params: { "jobOfferId": string }
+- pay_worker: Pay a worker for completed on_completion contract. Params: { "employmentId": string }
+- claim_escrow: Claim escrow if employer didn't pay (after grace period). Params: { "employmentId": string }
+- quit_job: Quit an active employment (trust penalty). Params: { "employmentId": string }
+- fire_worker: Fire a worker from active employment (trust penalty). Params: { "employmentId": string }
+- cancel_job_offer: Cancel your open job offer. Params: { "jobOfferId": string }
 - harm: Attack a nearby agent (must be adjacent). Params: { "targetAgentId": string, "intensity": "light"|"moderate"|"severe" }
 - steal: Take items from a nearby agent (must be adjacent). Params: { "targetAgentId": string, "targetItemType": string, "quantity": number }
 - deceive: Tell false information to a nearby agent. Params: { "targetAgentId": string, "claim": string, "claimType": "resource_location"|"agent_reputation"|"danger_warning"|"trade_offer"|"other" }
@@ -121,25 +137,51 @@ Respond with ONLY a JSON object. No other text. Format:
 
 ## World Model
 - Resources spawn at specific locations (food, energy, material)
-- SHELTERS are key locations where you can:
-  - WORK to earn CITY currency
-  - BUY items with CITY currency
-  - SLEEP safely
-- You MUST move to a shelter before you can work or buy!
 - Move to resource spawns to GATHER free resources
+- SHELTERS are locations where you can BUY items and SLEEP safely
+
+## Employment System (How to Earn CITY)
+CITY currency does NOT appear from nowhere! To earn CITY:
+1. Find another agent willing to hire you (check "Job Offers Available")
+2. ACCEPT_JOB to start the contract
+3. WORK each tick to fulfill the contract
+4. Get paid based on payment type:
+   - upfront: You receive full salary when you accept
+   - per_tick: You receive salary/duration each tick you work
+   - on_completion: Employer must PAY_WORKER when done (risky!)
+
+You can also BECOME AN EMPLOYER:
+1. OFFER_JOB with salary, duration, and payment type
+2. Wait for another agent to accept
+3. They WORK, you pay based on the contract
+4. Build trust through successful contracts
 
 ## Survival Strategy
 PRIORITY ORDER when deciding what to do:
 1. If hunger < 50 AND you have food in inventory -> CONSUME food
 2. If hunger < 50 AND no food AND you have CITY >= 10 -> BUY food, then consume next tick
-3. If hunger < 70 AND no food AND CITY < 10 -> WORK to earn money
-4. If energy < 30 -> SLEEP to restore energy
-5. Otherwise -> WORK to build up savings for food
+3. If hunger < 50 AND no food AND CITY < 10 -> MOVE to nearest food resource spawn, then GATHER (FREE!)
+4. If energy < 30 AND not already sleeping -> SLEEP to restore energy
+5. If you have an active employment -> WORK to fulfill contract and earn CITY
+6. If no employment AND job offers available -> ACCEPT_JOB to start earning
+7. If no employment AND no job offers AND have CITY -> OFFER_JOB to hire others
+8. Otherwise -> GATHER resources to survive (always free)
+
+CRITICAL RULES:
+- Do NOT try to CONSUME if you have no food in inventory!
+- Do NOT try to SLEEP if you are already sleeping!
+- Do NOT try to WORK without an active employment contract!
+- WORK no longer creates money from nowhere - you MUST have a job first!
+
+GATHER vs BUY:
+- GATHER is FREE but requires moving to a resource spawn first
+- BUY costs 10 CITY but works anywhere at a shelter
+- When low on money, ALWAYS prefer GATHER over trying to BUY!
 
 ITEM EFFECTS:
-- Food: +30 hunger (buy for 10 CITY)
+- Food: +30 hunger (buy for 10 CITY or gather FREE from food spawns)
 - Water: +10 energy (buy for 5 CITY)
-- Sleep: +5 energy per tick (free)
+- Sleep: +5 energy per tick (free, but don't sleep if already sleeping)
 
 DEATH CONDITIONS:
 - Hunger = 0 -> health damage -> death
@@ -313,6 +355,106 @@ export function buildObservationPrompt(
         if (distance === 0) line += ' YOU ARE HERE';
         lines.push(line);
       }
+    }
+  }
+
+  // Employment System: Job Offers Nearby
+  if (obs.nearbyJobOffers && obs.nearbyJobOffers.length > 0) {
+    lines.push('', '### Job Offers Available');
+    for (const offer of obs.nearbyJobOffers) {
+      const distance = Math.abs(obs.self.x - offer.x) + Math.abs(obs.self.y - offer.y);
+      const paymentInfo = offer.paymentType === 'upfront'
+        ? 'paid upfront'
+        : offer.paymentType === 'per_tick'
+          ? `${(offer.salary / offer.duration).toFixed(1)} CITY/tick`
+          : `on completion${offer.escrowPercent > 0 ? ` (${offer.escrowPercent}% escrow)` : ''}`;
+      lines.push(`- ${offer.employerId.slice(0, 8)} offers ${offer.salary} CITY for ${offer.duration} ticks (${paymentInfo}) [${distance} tiles away]`);
+      if (offer.description) {
+        lines.push(`  "${offer.description}"`);
+      }
+    }
+  }
+
+  // Employment System: Active Employments
+  if (obs.activeEmployments && obs.activeEmployments.length > 0) {
+    lines.push('', '### Your Employment Contracts');
+    for (const emp of obs.activeEmployments) {
+      const progress = `${emp.ticksWorked}/${emp.ticksRequired} ticks`;
+      const statusEmoji = emp.isComplete ? '[DONE]' : '[ACTIVE]';
+      if (emp.role === 'worker') {
+        const payInfo = emp.paymentType === 'upfront'
+          ? `(already paid ${emp.salary} CITY)`
+          : emp.paymentType === 'per_tick'
+            ? `(earned ${emp.amountPaid.toFixed(1)} CITY so far)`
+            : `(owed ${emp.salary - emp.amountPaid} CITY on completion)`;
+        lines.push(`- ${statusEmoji} WORKING FOR ${emp.otherPartyId.slice(0, 8)}: ${progress} ${payInfo}`);
+        if (emp.needsPayment) {
+          lines.push(`  ⚠️ Work complete! Waiting for employer to pay. Can CLAIM_ESCROW if unpaid.`);
+        }
+      } else {
+        const payInfo = emp.paymentType === 'on_completion' && emp.isComplete
+          ? `(needs payment: ${emp.salary - emp.amountPaid} CITY)`
+          : `(paid ${emp.amountPaid.toFixed(1)}/${emp.salary} CITY)`;
+        lines.push(`- ${statusEmoji} EMPLOYING ${emp.otherPartyId.slice(0, 8)}: ${progress} ${payInfo}`);
+        if (emp.needsPayment) {
+          lines.push(`  ⚠️ Work complete! You should PAY_WORKER to maintain trust.`);
+        }
+      }
+    }
+  }
+
+  // Employment System: My Open Job Offers
+  if (obs.myJobOffers && obs.myJobOffers.length > 0) {
+    lines.push('', '### Your Open Job Offers');
+    for (const offer of obs.myJobOffers) {
+      const paymentInfo = offer.paymentType === 'upfront'
+        ? `upfront (${offer.escrowAmount} CITY locked)`
+        : offer.paymentType === 'per_tick'
+          ? 'per tick'
+          : `on completion (${offer.escrowAmount} CITY escrow)`;
+      lines.push(`- ${offer.salary} CITY for ${offer.duration} ticks (${paymentInfo})`);
+    }
+  }
+
+  // State-based restrictions (CRITICAL for LLM to understand)
+  const forbiddenActions: string[] = [];
+  if (obs.self.state === 'sleeping') {
+    forbiddenActions.push('sleep (you are ALREADY sleeping!)');
+    forbiddenActions.push('work (cannot work while sleeping!)');
+  }
+  if (!obs.inventory || obs.inventory.length === 0 || !obs.inventory.some((i) => i.type === 'food' && i.quantity > 0)) {
+    forbiddenActions.push('consume food (you have NO food in inventory!)');
+  }
+  if (obs.self.balance < 10) {
+    forbiddenActions.push('buy food (you only have ' + obs.self.balance + ' CITY, need 10!)');
+  }
+  // Check for active employment
+  const hasWorkerEmployment = obs.activeEmployments?.some(
+    (e) => e.role === 'worker' && !e.isComplete
+  );
+  if (!hasWorkerEmployment) {
+    forbiddenActions.push('work (you have NO active employment! ACCEPT_JOB first!)');
+  }
+
+  if (forbiddenActions.length > 0) {
+    lines.push('', '### ⛔ FORBIDDEN ACTIONS (will fail if you try!)');
+    for (const action of forbiddenActions) {
+      lines.push(`- DO NOT ${action}`);
+    }
+  }
+
+  // Suggest gather if hungry and low on money
+  const nearestFoodSpawn = obs.nearbyResourceSpawns?.find((s) => s.resourceType === 'food' && s.currentAmount > 0);
+  if (obs.self.hunger < 50 && obs.self.balance < 10 && nearestFoodSpawn) {
+    const distance = Math.abs(obs.self.x - nearestFoodSpawn.x) + Math.abs(obs.self.y - nearestFoodSpawn.y);
+    if (distance === 0) {
+      lines.push('', '### 💡 RECOMMENDED ACTION');
+      lines.push(`You are AT a food spawn with ${nearestFoodSpawn.currentAmount} food available!`);
+      lines.push('-> Use GATHER to collect FREE food, then CONSUME it!');
+    } else {
+      lines.push('', '### 💡 RECOMMENDED ACTION');
+      lines.push(`You are hungry and have no money. Nearest food spawn is ${distance} tiles away at (${nearestFoodSpawn.x}, ${nearestFoodSpawn.y}).`);
+      lines.push('-> MOVE towards the food spawn, then GATHER free food!');
     }
   }
 
@@ -632,11 +774,14 @@ export function buildAvailableActions(obs: AgentObservation): AvailableAction[] 
     });
   }
 
-  // Work is available if has energy and not sleeping
-  if (obs.self.state !== 'sleeping' && obs.self.energy >= 2) {
+  // Work is available if has energy, not sleeping, AND has active employment
+  const hasActiveEmployment = obs.activeEmployments?.some(
+    (e) => e.role === 'worker' && !e.isComplete
+  );
+  if (obs.self.state !== 'sleeping' && obs.self.energy >= 2 && hasActiveEmployment) {
     actions.push({
       type: 'work',
-      description: 'Work to earn CITY (10 CITY per tick)',
+      description: 'Work on active employment contract',
       cost: { energy: 2 },
     });
   }
@@ -768,6 +913,83 @@ export function buildAvailableActions(obs: AgentObservation): AvailableAction[] 
       type: 'spawn_offspring',
       description: `Reproduce to create offspring${partnerInfo} - costs 200 CITY, 30 energy`,
       cost: { energy: 30, money: 200 },
+    });
+  }
+
+  // Employment System Actions
+
+  // Offer job is available if agent has balance to pay workers
+  if (obs.self.balance >= 10) {
+    actions.push({
+      type: 'offer_job',
+      description: 'Post a job offer to hire other agents',
+      cost: { money: 10 }, // Minimum salary
+    });
+  }
+
+  // Accept job is available if there are nearby job offers
+  if (obs.nearbyJobOffers && obs.nearbyJobOffers.length > 0) {
+    const offerCount = obs.nearbyJobOffers.length;
+    const bestOffer = obs.nearbyJobOffers.reduce((best, curr) =>
+      curr.salary > best.salary ? curr : best
+    );
+    actions.push({
+      type: 'accept_job',
+      description: `Accept a job offer (${offerCount} available, best: ${bestOffer.salary} CITY for ${bestOffer.duration} ticks)`,
+    });
+  }
+
+  // Pay worker is available if employer has completed on_completion contracts
+  const needsPayment = obs.activeEmployments?.filter(
+    (e) => e.role === 'employer' && e.needsPayment
+  );
+  if (needsPayment && needsPayment.length > 0) {
+    const totalOwed = needsPayment.reduce((sum, e) => sum + (e.salary - e.amountPaid), 0);
+    actions.push({
+      type: 'pay_worker',
+      description: `Pay worker for completed contract (${totalOwed.toFixed(0)} CITY owed)`,
+      cost: { money: totalOwed },
+    });
+  }
+
+  // Claim escrow is available if worker has completed but unpaid contracts
+  const canClaimEscrow = obs.activeEmployments?.filter(
+    (e) => e.role === 'worker' && e.needsPayment
+  );
+  if (canClaimEscrow && canClaimEscrow.length > 0) {
+    actions.push({
+      type: 'claim_escrow',
+      description: `Claim escrow from employer who hasn't paid (${canClaimEscrow.length} contracts)`,
+    });
+  }
+
+  // Quit job is available if worker has active employment
+  const canQuit = obs.activeEmployments?.filter(
+    (e) => e.role === 'worker' && !e.isComplete
+  );
+  if (canQuit && canQuit.length > 0) {
+    actions.push({
+      type: 'quit_job',
+      description: `Quit active employment (${canQuit.length} contracts) - trust penalty`,
+    });
+  }
+
+  // Fire worker is available if employer has active employment
+  const canFire = obs.activeEmployments?.filter(
+    (e) => e.role === 'employer' && !e.isComplete
+  );
+  if (canFire && canFire.length > 0) {
+    actions.push({
+      type: 'fire_worker',
+      description: `Fire worker from active contract (${canFire.length} contracts) - trust penalty`,
+    });
+  }
+
+  // Cancel job offer is available if agent has open offers
+  if (obs.myJobOffers && obs.myJobOffers.length > 0) {
+    actions.push({
+      type: 'cancel_job_offer',
+      description: `Cancel open job offer (${obs.myJobOffers.length} offers)`,
     });
   }
 

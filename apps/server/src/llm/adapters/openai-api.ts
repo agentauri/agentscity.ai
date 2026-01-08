@@ -6,6 +6,7 @@
 import OpenAI from 'openai';
 import { BaseLLMAdapter, type RawPromptOptions, type RawPromptResult } from './base';
 import type { LLMType, LLMMethod } from '../types';
+import { getEffectiveKey, isKeyDisabled } from '../key-manager';
 
 export class OpenAIAPIAdapter extends BaseLLMAdapter {
   readonly type: LLMType = 'codex';
@@ -20,15 +21,21 @@ export class OpenAIAPIAdapter extends BaseLLMAdapter {
     this.timeout = timeout;
   }
 
+  private currentApiKey?: string;
+
   private getClient(): OpenAI {
-    if (!this.client) {
-      this.client = new OpenAI();
+    const apiKey = getEffectiveKey('codex');
+    // Recreate client if key changed
+    if (!this.client || this.currentApiKey !== apiKey) {
+      this.client = new OpenAI({ apiKey });
+      this.currentApiKey = apiKey;
     }
     return this.client;
   }
 
   async isAvailable(): Promise<boolean> {
-    return !!process.env.OPENAI_API_KEY;
+    if (isKeyDisabled('codex')) return false;
+    return !!getEffectiveKey('codex');
   }
 
   protected async callLLM(prompt: string): Promise<string> {

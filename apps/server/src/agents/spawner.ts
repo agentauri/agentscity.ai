@@ -673,12 +673,14 @@ export interface GenesisSpawnConfiguration extends SpawnConfiguration {
  * @param child - Child specification from genesis
  * @param motherType - LLM type that generated this child
  * @param index - Index for positioning
+ * @param useConfiguredPersonalities - Override with user-configured weights
  * @returns AgentConfig ready for spawning
  */
 function childToAgentConfig(
   child: ChildSpecification,
   motherType: LLMType,
-  index: number
+  index: number,
+  useConfiguredPersonalities?: boolean
 ): AgentConfig {
   // Generate color based on mother type
   const colorMap: Partial<Record<LLMType, string>> = {
@@ -700,13 +702,21 @@ function childToAgentConfig(
   const offsetX = (index % 10) * 2;
   const offsetY = Math.floor(index / 10) * 2;
 
+  // Determine personality: use configured weights or LLM-generated
+  let personality: PersonalityTrait = child.personality;
+  if (useConfiguredPersonalities) {
+    // Use global index to ensure different seeds for different agents across all mothers
+    const seed = CONFIG.simulation.randomSeed + index;
+    personality = selectRandomPersonality(seed);
+  }
+
   return {
     llmType: motherType,
     name: child.name,
     color: baseColor,
     startX: startX + offsetX,
     startY: startY + offsetY,
-    personality: child.personality,
+    personality,
   };
 }
 
@@ -753,16 +763,23 @@ export async function spawnWorldWithGenesis(
 
   // Convert genesis results to agent configs
   const agentConfigs: AgentConfig[] = [];
+  let globalIndex = 0; // Track global index for unique personality seeds
 
   for (const result of genesisResults) {
     console.log(`[Spawner] ${result.motherType}: ${result.children.length} children generated`);
 
     for (let i = 0; i < result.children.length; i++) {
       const child = result.children[i];
-      const agentConfig = childToAgentConfig(child, result.motherType, i);
+      const agentConfig = childToAgentConfig(
+        child,
+        result.motherType,
+        globalIndex,
+        genesisConfig.useConfiguredPersonalities
+      );
 
       // Store additional genesis metadata in agent (via extended backstory)
       agentConfigs.push(agentConfig);
+      globalIndex++;
     }
   }
 

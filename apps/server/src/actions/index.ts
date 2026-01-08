@@ -27,6 +27,14 @@ import { handleRevokeCredential } from './handlers/revoke-credential';
 import { handleSpreadGossip } from './handlers/spread-gossip';
 // Phase 4: Reproduction (§36)
 import { handleSpawnOffspring } from './handlers/spawn-offspring';
+// Employment System
+import { handleOfferJob } from './handlers/offer-job';
+import { handleAcceptJob } from './handlers/accept-job';
+import { handlePayWorker } from './handlers/pay-worker';
+import { handleClaimEscrow } from './handlers/claim-escrow';
+import { handleQuitJob } from './handlers/quit-job';
+import { handleFireWorker } from './handlers/fire-worker';
+import { handleCancelJobOffer } from './handlers/cancel-job-offer';
 
 // Action handler registry
 const handlers: Map<ActionType, ActionHandler> = new Map();
@@ -55,6 +63,14 @@ handlers.set('revoke_credential', handleRevokeCredential as ActionHandler);
 handlers.set('spread_gossip', handleSpreadGossip as ActionHandler);
 // Phase 4: Reproduction (§36)
 handlers.set('spawn_offspring', handleSpawnOffspring as ActionHandler);
+// Employment System
+handlers.set('offer_job', handleOfferJob as ActionHandler);
+handlers.set('accept_job', handleAcceptJob as ActionHandler);
+handlers.set('pay_worker', handlePayWorker as ActionHandler);
+handlers.set('claim_escrow', handleClaimEscrow as ActionHandler);
+handlers.set('quit_job', handleQuitJob as ActionHandler);
+handlers.set('fire_worker', handleFireWorker as ActionHandler);
+handlers.set('cancel_job_offer', handleCancelJobOffer as ActionHandler);
 
 /**
  * Register a custom action handler

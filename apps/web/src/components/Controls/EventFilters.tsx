@@ -97,13 +97,13 @@ export function EventFilters() {
                 toggleEventFilter();
               }
             }}
-            className={`w-8 h-4 rounded-full transition-colors cursor-pointer ${
+            className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${
               eventFilterEnabled ? 'bg-city-accent' : 'bg-city-border'
             }`}
           >
             <div
-              className={`w-3 h-3 rounded-full bg-white transition-transform ${
-                eventFilterEnabled ? 'translate-x-4' : 'translate-x-0.5'
+              className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+                eventFilterEnabled ? 'left-4' : 'left-0.5'
               }`}
             />
           </div>

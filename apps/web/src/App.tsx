@@ -255,6 +255,7 @@ export default function App() {
           onReset={handleReset}
           onPause={handlePause}
           onResume={handleResume}
+          onOpenConfig={() => setShowConfigPanel(true)}
         />
       </div>
     </div>

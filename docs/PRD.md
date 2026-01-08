@@ -1,14 +1,14 @@
 # Sim Agents - Product Requirements Document (PRD)
 
-> **Version**: 1.4.0
-> **Status**: Phases 0-5 Complete
+> **Version**: 1.5.0
+> **Status**: Phases 0-5 Complete, Phase 6 In Progress
 > **Last Updated**: January 2026
 
 ---
 
 ## Implementation Status
 
-> **Current Status**: Phases 0-5 Complete
+> **Current Status**: Phases 0-5 Complete, Phase 6 (Employment System) In Progress
 >
 > This PRD documents the design specifications and requirements.
 > For detailed implementation status and progress tracking, see **[ROADMAP.md](../ROADMAP.md)**.
@@ -54,9 +54,10 @@
 35. [Gossip Protocol for Reputation](#35-gossip-protocol-for-reputation)
 36. [Agent Reproduction: spawn_offspring](#36-agent-reproduction-spawn_offspring)
 37. [LLM Performance & Multi-Agent Optimization](#37-llm-performance--multi-agent-optimization)
-38. [Biomes System](#38-biomes-system) ⭐ NEW
-39. [Experiment DSL & Batch Runner](#39-experiment-dsl--batch-runner) ⭐ NEW
-40. [Advanced Visualization](#40-advanced-visualization) ⭐ NEW
+38. [Biomes System](#38-biomes-system)
+39. [Experiment DSL & Batch Runner](#39-experiment-dsl--batch-runner)
+40. [Advanced Visualization](#40-advanced-visualization)
+41. [Employment System](#41-employment-system) ⭐ NEW
 
 ---
 
@@ -6128,6 +6129,262 @@ interface GraphLink {
 
 ---
 
+## 41. Employment System
+
+> **Phase 6**: Replacing "magic work" with real economic contracts
+
+### 41.1 Overview
+
+The Employment System replaces the original `work` action (where CITY currency appeared from nowhere) with a real contract-based employment system where agents hire each other.
+
+**Key Philosophy**: The system does NOT impose employment rules. Agents choose whether to offer jobs, accept them, pay workers, or default. Trust and reputation consequences emerge naturally from these choices.
+
+### 41.2 Why Employment Contracts?
+
+The original `work` action violated economic realism:
+- CITY appeared from "the system" with no employer
+- No negotiation, contracts, or trust building
+- No consequences for work quality or reliability
+
+The new system requires agents to:
+1. Find employers willing to pay
+2. Negotiate terms (salary, duration, payment type)
+3. Honor contracts or face trust penalties
+4. Build reputation through reliable employment relationships
+
+### 41.3 Job Offer Lifecycle
+
+```
+Employer creates offer → Worker accepts → Employment active → Work completed → Payment
+        │                      │                 │                    │
+        │                      │                 ├→ Worker quits (penalty)
+        │                      │                 └→ Employer fires (severance)
+        │                      │
+        │                      └→ Contract expired/cancelled
+        │
+        └→ Offer cancelled (escrow returned)
+```
+
+### 41.4 Actions
+
+#### offer_job
+
+Employer publishes a job offer.
+
+```typescript
+interface OfferJobParams {
+  salary: number;           // 1-1000 CITY
+  duration: number;         // 1-100 ticks
+  paymentType: 'upfront' | 'on_completion' | 'per_tick';
+  escrowPercent?: number;   // 0-100% (for on_completion/per_tick)
+  expiresInTicks?: number;  // null = never expires
+  description?: string;     // Job description
+}
+```
+
+**Escrow Logic**:
+- `upfront`: Full salary escrowed until worker accepts
+- `on_completion`: escrowPercent % of salary escrowed as guarantee
+- `per_tick`: escrowPercent % of salary escrowed as guarantee
+
+#### accept_job
+
+Worker accepts an open job offer, creating an employment contract.
+
+```typescript
+interface AcceptJobParams {
+  jobOfferId: string;
+}
+```
+
+**Effects**:
+- Creates employment record
+- For `upfront`: salary transferred immediately to worker
+- Updates trust between parties (+5 each)
+
+#### pay_worker
+
+Employer pays for completed `on_completion` contract.
+
+```typescript
+interface PayWorkerParams {
+  employmentId: string;
+}
+```
+
+**Requirements**:
+- Work must be complete (ticksWorked >= ticksRequired)
+- Caller must be employer
+- Contract must be `on_completion` type
+
+**Effects**:
+- Transfers remaining salary to worker
+- Returns escrow to employer
+- Updates trust (+15 each for honoring contract)
+
+#### quit_job
+
+Worker abandons an active employment contract.
+
+```typescript
+interface QuitJobParams {
+  employmentId: string;
+}
+```
+
+**Consequences**:
+- Trust penalty: worker loses -15, employer loses -20 toward worker
+- Contract marked as `abandoned`
+- Worker keeps any payments already received
+
+#### fire_worker
+
+Employer terminates an active employment contract.
+
+```typescript
+interface FireWorkerParams {
+  employmentId: string;
+}
+```
+
+**Consequences**:
+- Trust penalty: employer loses -20, worker loses -15 toward employer
+- Pro-rated severance for `on_completion` contracts
+- Escrow returned to employer
+- Contract marked as `fired`
+
+#### claim_escrow
+
+Worker claims escrow when employer fails to pay for completed work.
+
+```typescript
+interface ClaimEscrowParams {
+  employmentId: string;
+}
+```
+
+**Requirements**:
+- Work must be complete
+- Grace period (10 ticks) must have passed
+- Contract must be `on_completion` type with escrow
+
+**Consequences**:
+- Escrow transferred to worker
+- Severe trust penalty for employer (-30)
+- Contract marked as `unpaid`
+- Event `employer_defaulted` emitted
+
+#### cancel_job_offer
+
+Employer cancels an unfilled job offer.
+
+```typescript
+interface CancelJobOfferParams {
+  jobOfferId: string;
+}
+```
+
+**Effects**:
+- Escrowed funds returned to employer
+- Offer marked as `cancelled`
+
+### 41.5 Payment Types
+
+| Type | When Worker Paid | Risk Profile | Use Case |
+|------|------------------|--------------|----------|
+| `upfront` | Immediately on accept | Employer risk (worker may quit) | High-trust relationships |
+| `on_completion` | After work complete | Worker risk (employer may not pay) | Standard contracts |
+| `per_tick` | Each tick worked | Balanced risk | Long-duration jobs |
+
+### 41.6 Escrow Mechanics
+
+Escrow protects workers from employer default:
+
+1. **Deposit**: Employer locks escrowPercent% when creating offer
+2. **Hold**: Funds held in escrow during contract
+3. **Release**:
+   - On payment: returned to employer
+   - On default: claimable by worker after grace period
+   - On cancellation: returned to employer
+
+### 41.7 Trust Dynamics
+
+| Event | Worker Trust Change | Employer Trust Change |
+|-------|--------------------|-----------------------|
+| Job accepted | +5 | +5 |
+| Work completed & paid | +15 | +15 |
+| Worker quits | -15 toward employer | -20 toward worker |
+| Employer fires | -15 toward employer | -20 toward worker |
+| Employer defaults | -30 toward employer | -10 toward worker |
+
+### 41.8 Database Schema
+
+```typescript
+// Job Offers
+interface JobOffer {
+  id: string;
+  employerId: string;
+  salary: number;
+  duration: number;
+  paymentType: 'upfront' | 'on_completion' | 'per_tick';
+  escrowAmount: number;
+  description: string | null;
+  status: 'open' | 'accepted' | 'cancelled' | 'expired';
+  x: number;
+  y: number;
+  createdAtTick: number;
+  expiresAtTick: number | null;
+}
+
+// Employments (active contracts)
+interface Employment {
+  id: string;
+  jobOfferId: string;
+  employerId: string;
+  workerId: string;
+  salary: number;
+  paymentType: 'upfront' | 'on_completion' | 'per_tick';
+  escrowAmount: number;
+  ticksRequired: number;
+  ticksWorked: number;
+  amountPaid: number;
+  status: 'active' | 'completed' | 'abandoned' | 'fired' | 'unpaid';
+  startedAtTick: number;
+  endedAtTick: number | null;
+}
+```
+
+### 41.9 Events
+
+| Event Type | Payload | When |
+|------------|---------|------|
+| `job_offered` | jobOfferId, salary, duration, paymentType | Offer created |
+| `job_accepted` | employmentId, employerId, workerId, salary | Worker accepts |
+| `worker_paid` | employmentId, amountPaid, escrowReturned | Employer pays |
+| `worker_quit` | employmentId, ticksWorked, ticksRequired | Worker abandons |
+| `worker_fired` | employmentId, severancePaid, escrowReturned | Employer fires |
+| `escrow_claimed` | employmentId, escrowAmount, salaryLost | Worker claims escrow |
+| `employer_defaulted` | employmentId, salaryOwed, escrowLost | Non-payment recorded |
+| `job_offer_cancelled` | jobOfferId, refundAmount | Offer cancelled |
+| `employment_completed` | employmentId, totalPaid | Contract fulfilled |
+
+### 41.10 Scientific Value
+
+**Research Questions**:
+1. What payment types do agents prefer?
+2. Do agents learn to screen employers for reliability?
+3. Does escrow usage correlate with trust levels?
+4. How quickly do "deadbeat employer" reputations spread?
+5. Do employment clusters form around reliable employers?
+
+**Emergence Observations**:
+- Employment patterns as emergent economic structure
+- Trust networks based on employment history
+- Wage negotiation strategies
+- Labor market dynamics without central regulation
+
+---
+
 ## Conclusion
 
 Sim Agents v2.0 represents a comprehensive platform for studying emergent AI agent behavior at scale. The additions in this version provide:
@@ -6146,6 +6403,7 @@ Sim Agents v2.0 represents a comprehensive platform for studying emergent AI age
 12. **Biomes System**: Environmental heterogeneity for adaptive behavior research (§38)
 13. **Experiment DSL**: Reproducible research experiments with batch execution (§39)
 14. **Advanced Visualization**: Heatmaps, filters, and social graph for pattern analysis (§40)
+15. **Employment System**: Contract-based labor market replacing magic currency creation (§41) 🚧 *In Progress*
 
 > **Core Philosophy Reminder**: *"From City Simulation to Digital Darwinism Laboratory"*
 >

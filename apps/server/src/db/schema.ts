@@ -273,6 +273,93 @@ export const ledger = pgTable('ledger', {
 ]);
 
 // =============================================================================
+// JOB OFFERS (Employment System)
+// =============================================================================
+
+export const jobOffers = pgTable('job_offers', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Employer
+  employerId: uuid('employer_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+
+  // Job terms
+  salary: real('salary').notNull(), // Total CITY offered
+  duration: integer('duration').notNull(), // Ticks of work required
+  paymentType: varchar('payment_type', { length: 20 }).notNull(), // 'upfront' | 'on_completion' | 'per_tick'
+  escrowAmount: real('escrow_amount').notNull().default(0), // CITY locked as guarantee
+
+  // Optional description (emergent)
+  description: text('description'),
+
+  // Status
+  status: varchar('status', { length: 20 }).notNull().default('open'), // open, accepted, cancelled, expired
+
+  // Position where offer was made (for visibility)
+  x: integer('x').notNull(),
+  y: integer('y').notNull(),
+
+  // Timing
+  createdAtTick: bigint('created_at_tick', { mode: 'number' }).notNull(),
+  expiresAtTick: bigint('expires_at_tick', { mode: 'number' }), // null = never expires
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('job_offers_tenant_idx').on(table.tenantId),
+  index('job_offers_employer_idx').on(table.employerId),
+  index('job_offers_status_idx').on(table.status),
+  index('job_offers_position_idx').on(table.x, table.y),
+  index('job_offers_tick_idx').on(table.createdAtTick),
+]);
+
+// =============================================================================
+// EMPLOYMENTS (Active Work Contracts)
+// =============================================================================
+
+export const employments = pgTable('employments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Reference to original offer
+  jobOfferId: uuid('job_offer_id').notNull().references(() => jobOffers.id, { onDelete: 'cascade' }),
+
+  // Parties
+  employerId: uuid('employer_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  workerId: uuid('worker_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+
+  // Contract terms (copied from job offer for immutability)
+  salary: real('salary').notNull(),
+  paymentType: varchar('payment_type', { length: 20 }).notNull(),
+  escrowAmount: real('escrow_amount').notNull().default(0),
+  ticksRequired: integer('ticks_required').notNull(),
+
+  // Progress
+  ticksWorked: integer('ticks_worked').notNull().default(0),
+  amountPaid: real('amount_paid').notNull().default(0),
+
+  // Status
+  status: varchar('status', { length: 20 }).notNull().default('active'), // active, completed, abandoned, unpaid, fired
+
+  // Timing
+  startedAtTick: bigint('started_at_tick', { mode: 'number' }).notNull(),
+  endedAtTick: bigint('ended_at_tick', { mode: 'number' }),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('employments_tenant_idx').on(table.tenantId),
+  index('employments_job_offer_idx').on(table.jobOfferId),
+  index('employments_employer_idx').on(table.employerId),
+  index('employments_worker_idx').on(table.workerId),
+  index('employments_status_idx').on(table.status),
+]);
+
+// =============================================================================
 // EVENTS (Event Store - append-only)
 // =============================================================================
 
@@ -941,6 +1028,12 @@ export type LLMMetric = typeof llmMetrics.$inferSelect;
 export type NewLLMMetric = typeof llmMetrics.$inferInsert;
 export type TokenBudget = typeof tokenBudgets.$inferSelect;
 export type NewTokenBudget = typeof tokenBudgets.$inferInsert;
+
+// Employment System types
+export type JobOffer = typeof jobOffers.$inferSelect;
+export type NewJobOffer = typeof jobOffers.$inferInsert;
+export type Employment = typeof employments.$inferSelect;
+export type NewEmployment = typeof employments.$inferInsert;
 
 // Backwards compatibility alias (for migration period)
 export type Location = Shelter;

@@ -17,7 +17,7 @@ import { redis, closeRedisConnection } from './cache';
 import { subscribeToWorldEvents, closePubSub } from './cache/pubsub';
 import { tickEngine } from './simulation/tick-engine';
 import { startWorker, stopWorker, getQueueStats } from './queue';
-import { spawnWorld } from './agents/spawner';
+import { spawnWorld, spawnWorldWithGenesis } from './agents/spawner';
 import { logAdapterStatus } from './llm';
 import { getAllAgents } from './db/queries/agents';
 import { getAllShelters, getAllResourceSpawns, getWorldState, getCurrentTick, initWorldState, pauseWorld, resumeWorld, resetWorldData } from './db/queries/world';
@@ -113,7 +113,13 @@ import { registerExperimentRoutes } from './routes/experiments-api';
 import { registerScenarioRoutes } from './routes/scenarios-api';
 
 // Configuration API routes
-import { registerConfigRoutes } from './routes/config-api';
+import { registerConfigRoutes, getGenesisConfig } from './routes/config-api';
+
+// LLM API Keys routes
+import { registerLLMKeysRoutes } from './routes/llm-keys-api';
+
+// System Prompt API routes
+import { registerPromptRoutes } from './routes/prompt-api';
 
 // =============================================================================
 // Server Setup
@@ -328,6 +334,12 @@ await registerScenarioRoutes(server);
 
 // Register Configuration API routes
 await registerConfigRoutes(server);
+
+// Register LLM API Keys routes
+await registerLLMKeysRoutes(server);
+
+// Register System Prompt routes
+await registerPromptRoutes(server);
 
 // =============================================================================
 // Health & Status Routes
@@ -630,8 +642,32 @@ server.post('/api/world/start', {
 }, async () => {
   console.log('[Server] Starting simulation (scientific model)...');
 
-  // Spawn world with default configuration (resources + shelters + agents)
-  await spawnWorld();
+  // Check if Genesis mode is enabled
+  const genesisConfig = getGenesisConfig();
+
+  if (genesisConfig.enabled) {
+    console.log(`[Server] Genesis mode enabled - spawning ${genesisConfig.childrenPerMother} agents per mother`);
+    console.log(`[Server] Selected mothers: ${genesisConfig.mothers.join(', ')}`);
+
+    // Spawn world with Genesis configuration
+    const result = await spawnWorldWithGenesis({
+      genesis: {
+        enabled: true,
+        childrenPerMother: genesisConfig.childrenPerMother,
+        mothers: genesisConfig.mothers as any[], // LLMType[]
+        mode: genesisConfig.mode,
+        diversityThreshold: genesisConfig.diversityThreshold,
+        requiredArchetypes: genesisConfig.requiredArchetypes,
+      },
+      useMockGenesis: false,
+      useGenesisCache: true,
+    });
+
+    console.log(`[Server] Genesis complete: ${result.totalAgents} agents spawned`);
+  } else {
+    // Spawn world with default configuration (resources + shelters + 7 agents)
+    await spawnWorld();
+  }
 
   // Fetch spawned entities
   const [spawnedAgents, resourceSpawns, shelters] = await Promise.all([

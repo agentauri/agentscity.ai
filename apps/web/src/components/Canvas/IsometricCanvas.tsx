@@ -143,7 +143,7 @@ export const IsometricCanvas = forwardRef<IsometricCanvasHandle>(function Isomet
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Handle wheel zoom
+  // Handle wheel zoom - zooms towards mouse position
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -151,10 +151,30 @@ export const IsometricCanvas = forwardRef<IsometricCanvasHandle>(function Isomet
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       if (rendererRef.current) {
+        const rect = container.getBoundingClientRect();
+
+        // Mouse position relative to container
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        // Get current camera position
+        const camera = rendererRef.current.getCamera();
+
+        // Calculate zoom change
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
         const newZoom = Math.max(0.25, Math.min(2, currentZoom + delta));
+
+        // World point under the mouse before zoom
+        const worldX = (mouseX - camera.x) / currentZoom;
+        const worldY = (mouseY - camera.y) / currentZoom;
+
+        // New camera position to keep the same world point under the mouse
+        const newCameraX = mouseX - worldX * newZoom;
+        const newCameraY = mouseY - worldY * newZoom;
+
         setCurrentZoom(newZoom);
         rendererRef.current.setZoom(newZoom);
+        rendererRef.current.setCamera(newCameraX, newCameraY);
       }
     };
 

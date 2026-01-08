@@ -22,7 +22,7 @@
 
 ### Design & Architecture
 
-- **[PRD.md](PRD.md)** - Product Requirements Document
+- **[PRD.md](PRD.md)** - Product Requirements Document (v1.5.0)
   - Vision and philosophy (Sections 1-4)
   - System architecture (Section 5)
   - World model (Section 6)
@@ -30,6 +30,8 @@
   - Economy (Section 8)
   - Actions catalog (Section 9, 24)
   - Governance (Section 11)
+  - Advanced features (Sections 34-40)
+  - **NEW**: Employment System (Section 41) 🚧
 
 ### Technical Reference
 
@@ -70,7 +72,8 @@
   - API endpoints
 
 - **[ROADMAP](../ROADMAP.md)** - Implementation progress
-  - Phase 0-5 status
+  - Phases 0-5 complete
+  - **Phase 6 in progress**: Employment System 🚧
   - Technical debt tracking
   - Recent commits
 
@@ -99,4 +102,4 @@ README.md           ─── Quick start, links to docs
 
 ---
 
-*Last updated: January 2026*
+*Last updated: January 7, 2026*

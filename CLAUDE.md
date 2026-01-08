@@ -125,6 +125,11 @@ See `apps/server/src/config/index.ts` for full configuration options.
 3. Register in action dispatcher
 4. Add tests in `apps/server/src/__tests__/actions/`
 
+**Recent Example**: Employment System (Phase 6)
+- 7 new handlers: `offer-job`, `accept-job`, `pay-worker`, `quit-job`, `fire-worker`, `claim-escrow`, `cancel-job-offer`
+- New queries: `apps/server/src/db/queries/employment.ts`
+- See PRD §41 and ROADMAP Phase 6 for details
+
 ## Adding New LLM Providers
 
 1. Create adapter in `apps/server/src/llm/adapters/`

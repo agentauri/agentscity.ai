@@ -73,6 +73,11 @@ export interface AgentObservation {
 
   // Phase 2: Social Discovery
   knownAgents?: KnownAgentEntry[]; // Agents known through direct contact or referral
+
+  // Employment System
+  nearbyJobOffers?: NearbyJobOffer[]; // Open job offers in the area
+  activeEmployments?: ActiveEmployment[]; // Current contracts (as worker or employer)
+  myJobOffers?: OpenJobOffer[]; // Job offers I've posted
 }
 
 export interface InventoryEntry {
@@ -166,6 +171,45 @@ export interface LocationNameEntry {
   name: string;
   usageCount: number;
   isConsensus: boolean;
+}
+
+// =============================================================================
+// Employment System Types
+// =============================================================================
+
+export interface NearbyJobOffer {
+  id: string;
+  employerId: string;
+  salary: number;
+  duration: number; // ticks required
+  paymentType: 'upfront' | 'on_completion' | 'per_tick';
+  escrowPercent: number; // 0-100
+  description?: string;
+  x: number;
+  y: number;
+}
+
+export interface ActiveEmployment {
+  id: string;
+  role: 'worker' | 'employer';
+  otherPartyId: string; // employer if worker, worker if employer
+  salary: number;
+  ticksWorked: number;
+  ticksRequired: number;
+  paymentType: 'upfront' | 'on_completion' | 'per_tick';
+  amountPaid: number;
+  isComplete: boolean; // ticks_worked >= ticks_required
+  needsPayment: boolean; // on_completion and complete but not paid
+}
+
+export interface OpenJobOffer {
+  id: string;
+  salary: number;
+  duration: number;
+  paymentType: 'upfront' | 'on_completion' | 'per_tick';
+  escrowAmount: number;
+  createdAtTick: number;
+  expiresAtTick?: number;
 }
 
 // =============================================================================

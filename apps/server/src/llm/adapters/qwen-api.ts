@@ -5,6 +5,7 @@
 
 import { BaseLLMAdapter } from './base';
 import type { LLMType, LLMMethod } from '../types';
+import { getEffectiveKey, isKeyDisabled } from '../key-manager';
 
 export class QwenAPIAdapter extends BaseLLMAdapter {
   readonly type: LLMType = 'qwen';
@@ -22,10 +23,11 @@ export class QwenAPIAdapter extends BaseLLMAdapter {
   }
 
   private getApiKey(): string | undefined {
-    return process.env.QWEN_API_KEY;
+    return getEffectiveKey('qwen');
   }
 
   async isAvailable(): Promise<boolean> {
+    if (isKeyDisabled('qwen')) return false;
     return !!this.getApiKey();
   }
 

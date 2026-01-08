@@ -25,7 +25,7 @@ import { getAliveAgents, updateAgent } from '../db/queries/agents';
 import { appendEvent } from '../db/queries/events';
 import { publishEvent, type WorldEvent } from '../cache/pubsub';
 import { setCachedTick, setCachedWorldState, setCachedAgents } from '../cache/projections';
-import { applyNeedsDecay, type DecayResult } from './needs-decay';
+import { applyNeedsDecay, applyCurrencyDecay, type DecayResult } from './needs-decay';
 import { processAgentsTick } from '../agents/orchestrator';
 import { captureVariantSnapshot, updateVariantStatus, updateExperimentStatus, getNextPendingVariant } from '../db/queries/experiments';
 import { updateAllAgentRoles } from '../db/queries/roles';
@@ -256,6 +256,18 @@ class TickEngine {
         for (const event of result.events) {
           await publishEvent(event);
         }
+      }
+    }
+
+    // Phase 5b: CURRENCY DECAY - Apply currency decay to discourage hoarding
+    for (const agent of agents) {
+      // Skip dead agents (already handled in needs decay)
+      if (deaths.includes(agent.id)) continue;
+
+      const currencyResult = await applyCurrencyDecay(agent, tick);
+      if (currencyResult.applied && currencyResult.event) {
+        allEvents.push(currencyResult.event);
+        await publishEvent(currencyResult.event);
       }
     }
 

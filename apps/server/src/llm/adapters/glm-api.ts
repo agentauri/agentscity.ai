@@ -7,6 +7,7 @@
 import type { LLMAdapter, LLMType, LLMMethod, AgentObservation, AgentDecision } from '../types';
 import { buildFullPrompt } from '../prompt-builder';
 import { parseResponse, getFallbackDecision } from '../response-parser';
+import { getEffectiveKey, isKeyDisabled } from '../key-manager';
 
 export class GLMAPIAdapter implements LLMAdapter {
   readonly type: LLMType = 'glm';
@@ -40,10 +41,11 @@ export class GLMAPIAdapter implements LLMAdapter {
   }
 
   private getApiKey(): string | undefined {
-    return process.env.GLM_API_KEY;
+    return getEffectiveKey('glm');
   }
 
   async isAvailable(): Promise<boolean> {
+    if (isKeyDisabled('glm')) return false;
     return !!this.getApiKey();
   }
 

@@ -1,21 +1,35 @@
 import { useState } from 'react';
 import { useEditorStore, useAppMode, useIsPaused } from '../../stores/editor';
 import { useSettingsStore, useSoundEnabled } from '../../stores/settings';
+import { StartConfirmationModal } from './StartConfirmationModal';
 
 interface ModeControlsProps {
   onStartSimulation: () => Promise<void>;
   onReset: () => void;
   onPause?: () => Promise<void>;
   onResume?: () => Promise<void>;
+  onOpenConfig?: () => void;
 }
 
-export function ModeControls({ onStartSimulation, onReset, onPause, onResume }: ModeControlsProps) {
+export function ModeControls({ onStartSimulation, onReset, onPause, onResume, onOpenConfig }: ModeControlsProps) {
   const mode = useAppMode();
   const isPaused = useIsPaused();
   const { setMode, setPaused } = useEditorStore();
   const [isLoading, setIsLoading] = useState(false);
+  const [showStartModal, setShowStartModal] = useState(false);
   const soundEnabled = useSoundEnabled();
   const { toggleSound } = useSettingsStore();
+
+  // Handle confirmed start
+  const handleConfirmedStart = async () => {
+    setIsLoading(true);
+    try {
+      await onStartSimulation();
+      setShowStartModal(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Handle pause/resume with BE sync
   const handlePauseToggle = async () => {
@@ -42,30 +56,31 @@ export function ModeControls({ onStartSimulation, onReset, onPause, onResume }: 
           Ready
         </span>
 
-        {/* Start button - scientific mode starts immediately */}
+        {/* Start button - opens confirmation modal */}
         <button
           type="button"
           disabled={isLoading}
-          onClick={async () => {
-            setIsLoading(true);
-            try {
-              await onStartSimulation();
-            } finally {
-              setIsLoading(false);
-            }
-          }}
+          onClick={() => setShowStartModal(true)}
           className="px-2.5 py-1.5 sm:px-4 bg-city-accent hover:bg-city-accent-light text-white text-[11px] sm:text-xs font-semibold rounded flex items-center gap-1 sm:gap-1.5 disabled:opacity-50"
         >
-          {isLoading ? (
-            <span className="animate-spin text-xs">...</span>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none" className="sm:w-3 sm:h-3">
-              <polygon points="5 3 19 12 5 21 5 3" />
-            </svg>
-          )}
-          <span className="hidden xs:inline">{isLoading ? 'Starting...' : 'Start'}</span>
-          <span className="xs:hidden">{isLoading ? '...' : 'Go'}</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none" className="sm:w-3 sm:h-3">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+          <span className="hidden xs:inline">Start</span>
+          <span className="xs:hidden">Go</span>
         </button>
+
+        {/* Start Confirmation Modal */}
+        <StartConfirmationModal
+          isOpen={showStartModal}
+          onConfirm={handleConfirmedStart}
+          onCancel={() => setShowStartModal(false)}
+          onOpenConfig={() => {
+            setShowStartModal(false);
+            onOpenConfig?.();
+          }}
+          isLoading={isLoading}
+        />
       </div>
     );
   }

@@ -68,8 +68,12 @@ export const CONFIG = {
   // ---------------------------------------------------------------------------
   actions: {
     move: {
-      /** Energy cost per tile moved */
-      energyCost: env('MOVE_ENERGY_COST', 1),
+      /** Energy cost per tile moved (increased for survival pressure) */
+      energyCost: env('MOVE_ENERGY_COST', 2),
+      /** Hunger cost per tile moved (new: movement makes you hungry) */
+      hungerCost: env('MOVE_HUNGER_COST', 0.5),
+      /** Extra cost multiplier for consecutive moves (discourages spam) */
+      consecutivePenalty: env('MOVE_CONSECUTIVE_PENALTY', 0.5),
     },
 
     gather: {
@@ -239,6 +243,18 @@ export const CONFIG = {
       /** Offspring starting energy */
       offspringStartEnergy: env('SPAWN_OFFSPRING_ENERGY', 80),
     },
+  },
+
+  // ---------------------------------------------------------------------------
+  // Economy (Currency Management)
+  // ---------------------------------------------------------------------------
+  economy: {
+    /** Currency decay rate per interval (5% = 0.05) */
+    currencyDecayRate: env('CURRENCY_DECAY_RATE', 0.05),
+    /** Interval in ticks for currency decay */
+    currencyDecayInterval: env('CURRENCY_DECAY_INTERVAL', 10),
+    /** Minimum balance exempt from decay (prevents punishing poor agents) */
+    currencyDecayThreshold: env('CURRENCY_DECAY_THRESHOLD', 20),
   },
 
   // ---------------------------------------------------------------------------
@@ -457,9 +473,9 @@ export const CONFIG = {
      * Use emergent prompt system instead of prescriptive prompts.
      * Emergent prompts only provide world physics and sensory descriptions,
      * allowing agents to discover survival strategies through experience.
-     * Default: false (use prescriptive prompts for backward compatibility)
+     * Default: true (emergent behavior is the goal)
      */
-    useEmergentPrompt: envBool('USE_EMERGENT_PROMPT', false),
+    useEmergentPrompt: envBool('USE_EMERGENT_PROMPT', true),
 
     // -------------------------------------------------------------------------
     // Baseline Agents (Scientific Comparison)
@@ -491,6 +507,7 @@ export const CONFIG = {
 // Type exports
 export type Config = typeof CONFIG;
 export type ActionConfig = typeof CONFIG.actions;
+export type EconomyConfig = typeof CONFIG.economy;
 export type NeedsConfig = typeof CONFIG.needs;
 export type QueueConfig = typeof CONFIG.queue;
 export type LLMConfig = typeof CONFIG.llm;
@@ -577,6 +594,29 @@ interface RuntimeConfigOverrides {
     enabled?: boolean;
     ttlSeconds?: number;
   };
+  actions?: {
+    move?: {
+      energyCost?: number;
+      hungerCost?: number;
+      consecutivePenalty?: number;
+    };
+    gather?: {
+      energyCostPerUnit?: number;
+      maxPerAction?: number;
+    };
+    work?: {
+      basePayPerTick?: number;
+      energyCostPerTick?: number;
+    };
+    sleep?: {
+      energyRestoredPerTick?: number;
+    };
+  };
+  economy?: {
+    currencyDecayRate?: number;
+    currencyDecayInterval?: number;
+    currencyDecayThreshold?: number;
+  };
 }
 
 let runtimeOverrides: RuntimeConfigOverrides = {};
@@ -612,6 +652,29 @@ export function getRuntimeConfig(): RuntimeConfigOverrides & typeof CONFIG {
       ...CONFIG.experiment,
       useEmergentPrompt: isEmergentPromptEnabled(),
     },
+    actions: {
+      ...CONFIG.actions,
+      move: {
+        ...CONFIG.actions.move,
+        ...runtimeOverrides.actions?.move,
+      },
+      gather: {
+        ...CONFIG.actions.gather,
+        ...runtimeOverrides.actions?.gather,
+      },
+      work: {
+        ...CONFIG.actions.work,
+        ...runtimeOverrides.actions?.work,
+      },
+      sleep: {
+        ...CONFIG.actions.sleep,
+        ...runtimeOverrides.actions?.sleep,
+      },
+    },
+    economy: {
+      ...CONFIG.economy,
+      ...runtimeOverrides.economy,
+    },
   };
 }
 
@@ -625,6 +688,13 @@ export function setRuntimeConfig(updates: RuntimeConfigOverrides): void {
     agent: { ...runtimeOverrides.agent, ...updates.agent },
     needs: { ...runtimeOverrides.needs, ...updates.needs },
     llmCache: { ...runtimeOverrides.llmCache, ...updates.llmCache },
+    actions: updates.actions ? {
+      move: { ...runtimeOverrides.actions?.move, ...updates.actions.move },
+      gather: { ...runtimeOverrides.actions?.gather, ...updates.actions.gather },
+      work: { ...runtimeOverrides.actions?.work, ...updates.actions.work },
+      sleep: { ...runtimeOverrides.actions?.sleep, ...updates.actions.sleep },
+    } : runtimeOverrides.actions,
+    economy: { ...runtimeOverrides.economy, ...updates.economy },
   };
 }
 
