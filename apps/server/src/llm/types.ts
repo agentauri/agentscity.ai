@@ -78,6 +78,12 @@ export interface AgentObservation {
   nearbyJobOffers?: NearbyJobOffer[]; // Open job offers in the area
   activeEmployments?: ActiveEmployment[]; // Current contracts (as worker or employer)
   myJobOffers?: OpenJobOffer[]; // Job offers I've posted
+
+  // Stigmergy & Signaling
+  /** Nearby scents (stigmergy) */
+  scents?: ScentTrace[];
+  /** Nearby signals heard (long-range) */
+  signals?: SignalHeard[];
 }
 
 export interface InventoryEntry {
@@ -227,6 +233,20 @@ export interface KnownAgentEntry {
   informationAge: number; // ticks since information was received
 }
 
+export interface ScentTrace {
+  x: number;
+  y: number;
+  strength: 'strong' | 'weak' | 'faint';
+  agentId?: string;
+}
+
+export interface SignalHeard {
+  direction: 'north' | 'north-east' | 'east' | 'south-east' | 'south' | 'south-west' | 'west' | 'north-west' | 'here';
+  message: string;
+  intensity: 'loud' | 'quiet';
+  tick: number;
+}
+
 // =============================================================================
 // Agent Decision (what the agent chooses to do)
 // =============================================================================
@@ -235,6 +255,167 @@ export interface AgentDecision {
   action: ActionType;
   params: ActionParams;
   reasoning?: string; // Optional explanation for logging
+}
+
+export type ActionParams =
+  | MoveParams
+  | GatherParams
+  | ConsumeParams
+  | SleepParams
+  | BuyParams
+  | WorkParams
+  | TradeParams
+  | OfferJobParams
+  | AcceptJobParams
+  | PayWorkerParams
+  | ClaimEscrowParams
+  | QuitJobParams
+  | FireWorkerParams
+  | CancelJobOfferParams
+  | HarmParams
+  | StealParams
+  | DeceiveParams
+  | ShareInfoParams
+  | ClaimParams
+  | NameLocationParams
+  | IssueCredentialParams
+  | RevokeCredentialParams
+  | SpreadGossipParams
+  | SpawnOffspringParams
+  | SignalParams;
+
+export interface MoveParams {
+  toX: number;
+  toY: number;
+}
+
+export interface SignalParams {
+  message: string;
+  intensity: number; // 1-5
+}
+
+export interface GatherParams {
+  resourceType?: string;
+  quantity?: number;
+}
+
+export interface BuyParams {
+  itemType: string;
+  quantity: number;
+}
+
+export interface ConsumeParams {
+  itemType: string;
+}
+
+export interface SleepParams {
+  duration: number;
+}
+
+export interface WorkParams {
+  duration?: number;
+}
+
+export interface TradeParams {
+  targetAgentId: string;
+  offeringItemType: string;
+  offeringQuantity: number;
+  requestingItemType: string;
+  requestingQuantity: number;
+}
+
+export interface OfferJobParams {
+  salary: number;
+  duration: number;
+  paymentType: 'upfront' | 'on_completion' | 'per_tick';
+  escrowPercent?: number;
+  description?: string;
+}
+
+export interface AcceptJobParams {
+  jobOfferId: string;
+}
+
+export interface PayWorkerParams {
+  employmentId: string;
+}
+
+export interface ClaimEscrowParams {
+  employmentId: string;
+}
+
+export interface QuitJobParams {
+  employmentId: string;
+}
+
+export interface FireWorkerParams {
+  employmentId: string;
+}
+
+export interface CancelJobOfferParams {
+  jobOfferId: string;
+}
+
+export interface HarmParams {
+  targetAgentId: string;
+  intensity: 'light' | 'moderate' | 'severe';
+}
+
+export interface StealParams {
+  targetAgentId: string;
+  targetItemType: string;
+  quantity: number;
+}
+
+export interface DeceiveParams {
+  targetAgentId: string;
+  claim: string;
+  claimType: 'resource_location' | 'agent_reputation' | 'danger_warning' | 'trade_offer' | 'other';
+}
+
+export interface ShareInfoParams {
+  targetAgentId: string;
+  subjectAgentId: string;
+  infoType: 'location' | 'reputation' | 'warning' | 'recommendation';
+  claim?: string;
+  sentiment?: number;
+}
+
+export interface ClaimParams {
+  claimType: 'territory' | 'home' | 'resource' | 'danger' | 'meeting_point';
+  description?: string;
+}
+
+export interface NameLocationParams {
+  name: string;
+}
+
+export interface IssueCredentialParams {
+  subjectAgentId: string;
+  claimType: 'skill' | 'experience' | 'membership' | 'character' | 'custom';
+  description: string;
+  evidence?: string;
+  level?: number;
+  expiresAtTick?: number;
+}
+
+export interface RevokeCredentialParams {
+  credentialId: string;
+  reason?: string;
+}
+
+export interface SpreadGossipParams {
+  targetAgentId: string;
+  subjectAgentId: string;
+  topic: 'skill' | 'behavior' | 'transaction' | 'warning' | 'recommendation';
+  claim: string;
+  sentiment: number;
+}
+
+export interface SpawnOffspringParams {
+  partnerId?: string;
+  inheritSystemPrompt?: boolean;
+  mutationIntensity?: number;
 }
 
 // =============================================================================

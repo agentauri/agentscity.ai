@@ -4,6 +4,8 @@
  * Endpoints for runtime modifications to the simulation.
  * Used for "chaos monkey" style testing and experimental interventions.
  *
+ * NOTE: All write endpoints require admin authentication via X-Admin-Key header.
+ *
  * Endpoints:
  * - POST /api/scenarios/shock     - Economic shock (modify currency)
  * - POST /api/scenarios/disaster  - Natural disaster (remove resources)
@@ -19,6 +21,7 @@ import { eq, sql, and, between } from 'drizzle-orm';
 import { getCurrentTick } from '../db/queries/world';
 import { appendEvent } from '../db/queries/events';
 import { v4 as uuid } from 'uuid';
+import { requireAdmin } from '../middleware/auth';
 
 // =============================================================================
 // Types
@@ -176,9 +179,10 @@ export async function expireRuleOverrides(): Promise<void> {
 
 export async function registerScenarioRoutes(server: FastifyInstance): Promise<void> {
   // ---------------------------------------------------------------------------
-  // POST /api/scenarios/shock - Economic shock
+  // POST /api/scenarios/shock - Economic shock (requires admin auth)
   // ---------------------------------------------------------------------------
   server.post<{ Body: EconomicShockBody }>('/api/scenarios/shock', {
+    preHandler: [requireAdmin],
     schema: {
       description: 'Inject an economic shock - modify agent balances',
       tags: ['Scenarios'],
@@ -268,9 +272,10 @@ export async function registerScenarioRoutes(server: FastifyInstance): Promise<v
   });
 
   // ---------------------------------------------------------------------------
-  // POST /api/scenarios/disaster - Natural disaster
+  // POST /api/scenarios/disaster - Natural disaster (requires admin auth)
   // ---------------------------------------------------------------------------
   server.post<{ Body: DisasterBody }>('/api/scenarios/disaster', {
+    preHandler: [requireAdmin],
     schema: {
       description: 'Trigger a natural disaster - deplete resources in an area',
       tags: ['Scenarios'],
@@ -377,9 +382,10 @@ export async function registerScenarioRoutes(server: FastifyInstance): Promise<v
   });
 
   // ---------------------------------------------------------------------------
-  // POST /api/scenarios/abundance - Resource abundance
+  // POST /api/scenarios/abundance - Resource abundance (requires admin auth)
   // ---------------------------------------------------------------------------
   server.post<{ Body: AbundanceBody }>('/api/scenarios/abundance', {
+    preHandler: [requireAdmin],
     schema: {
       description: 'Create resource abundance - boost resources in an area',
       tags: ['Scenarios'],
@@ -465,9 +471,10 @@ export async function registerScenarioRoutes(server: FastifyInstance): Promise<v
   });
 
   // ---------------------------------------------------------------------------
-  // POST /api/scenarios/rule - Modify simulation rules
+  // POST /api/scenarios/rule - Modify simulation rules (requires admin auth)
   // ---------------------------------------------------------------------------
   server.post<{ Body: RuleChangeBody }>('/api/scenarios/rule', {
+    preHandler: [requireAdmin],
     schema: {
       description: 'Modify simulation rules temporarily or permanently',
       tags: ['Scenarios'],
@@ -584,9 +591,10 @@ export async function registerScenarioRoutes(server: FastifyInstance): Promise<v
   });
 
   // ---------------------------------------------------------------------------
-  // DELETE /api/scenarios/rules/:rule - Remove a rule override
+  // DELETE /api/scenarios/rules/:rule - Remove a rule override (requires admin auth)
   // ---------------------------------------------------------------------------
   server.delete<{ Params: { rule: string } }>('/api/scenarios/rules/:rule', {
+    preHandler: [requireAdmin],
     schema: {
       description: 'Remove an active rule override',
       tags: ['Scenarios'],

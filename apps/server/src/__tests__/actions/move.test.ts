@@ -57,7 +57,7 @@ describe('handleMove', () => {
       expect(result.success).toBe(true);
       expect(result.changes?.x).toBe(51);
       expect(result.changes?.y).toBe(50);
-      expect(result.changes?.energy).toBe(99); // -1 energy per tile
+      expect(result.changes?.energy).toBe(98); // -2 energy per tile
       expect(result.changes?.state).toBe('walking');
     });
 
@@ -102,7 +102,7 @@ describe('handleMove', () => {
       // Should only move one step
       expect(result.changes?.x).toBe(51); // X first in path algorithm
       expect(result.changes?.y).toBe(50);
-      expect(result.changes?.energy).toBe(99); // Only 1 energy for 1 step
+      expect(result.changes?.energy).toBe(98); // 2 energy for 1 step
     });
 
     test('emits agent_moved event', async () => {
@@ -119,7 +119,8 @@ describe('handleMove', () => {
         to: { x: 51, y: 50 },
         finalDestination: { x: 51, y: 50 },
         remainingDistance: 0,
-        energyCost: 1,
+        energyCost: 2,
+        hungerCost: 0.5,
       });
     });
 
@@ -200,14 +201,14 @@ describe('handleMove', () => {
     });
 
     test('succeeds with minimum energy (no vitals penalty)', async () => {
-      // Agent with energy above penalty thresholds (30) so base cost of 1 applies
-      const agent = createMockAgent({ x: 50, y: 50, energy: 31 });
+      // Agent with energy above penalty thresholds (30) so base cost of 2 applies
+      const agent = createMockAgent({ x: 50, y: 50, energy: 32 });
       const intent = createMoveIntent(51, 50);
 
       const result = await handleMove(intent, agent);
 
       expect(result.success).toBe(true);
-      expect(result.changes?.energy).toBe(30); // 31 - 1 base cost
+      expect(result.changes?.energy).toBe(30); // 32 - 2 base cost
     });
 
     test('fails with 1 energy due to vitals penalty', async () => {
@@ -222,13 +223,13 @@ describe('handleMove', () => {
       expect(result.error).toContain('Not enough energy');
     });
 
-    test('costs 1 energy per tile moved', async () => {
+    test('costs 2 energy per tile moved', async () => {
       const agent = createMockAgent({ x: 50, y: 50, energy: 50 });
       const intent = createMoveIntent(51, 50);
 
       const result = await handleMove(intent, agent);
 
-      expect(result.changes?.energy).toBe(49);
+      expect(result.changes?.energy).toBe(48);
     });
   });
 
@@ -263,7 +264,7 @@ describe('handleMove', () => {
       // Should only move one step toward destination
       expect(result.changes?.x).toBe(1); // X first in path algorithm
       expect(result.changes?.y).toBe(0);
-      expect(result.changes?.energy).toBe(99);
+      expect(result.changes?.energy).toBe(98);
     });
   });
 });

@@ -5,7 +5,7 @@
  * Admin endpoints require an admin API key (ADMIN_API_KEY env var).
  */
 
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import {
   createTenant,
   getTenant,
@@ -22,34 +22,12 @@ import {
 import {
   requireTenant,
   getTenantContext,
-  requireTenantFromPath,
 } from '../middleware/tenant';
+import { requireAdmin } from '../middleware/auth';
 import { tenantEngineManager } from '../simulation/tenant-tick-engine';
 import { clearTenantCache } from '../cache/tenant-projections';
 import { publishTenantLifecycleEvent } from '../cache/tenant-pubsub';
 import { subscribeToTenantEvents, type TenantWorldEvent } from '../cache/tenant-pubsub';
-
-// Admin API key from environment
-const ADMIN_API_KEY = process.env.ADMIN_API_KEY || 'admin_secret_key_change_me';
-
-// =============================================================================
-// Admin Authentication Middleware
-// =============================================================================
-
-async function requireAdmin(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
-  const apiKey = request.headers['x-admin-key'] as string | undefined;
-
-  if (!apiKey || apiKey !== ADMIN_API_KEY) {
-    reply.code(401).send({
-      error: 'Unauthorized',
-      message: 'Invalid or missing admin API key',
-    });
-    return;
-  }
-}
 
 // =============================================================================
 // Route Registration

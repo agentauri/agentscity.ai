@@ -57,6 +57,8 @@ export const CONFIG = {
     gridSize: env('GRID_SIZE', 100),
     /** Agent visibility radius */
     visibilityRadius: env('VISIBILITY_RADIUS', 10),
+    /** Landmark visibility radius (claims/names seen from further away) */
+    landmarkVisibilityRadius: env('LANDMARK_VISIBILITY_RADIUS', 25),
     /** Test mode: agents use fallback decisions instead of LLM calls */
     testMode: envString('TEST_MODE', 'false') === 'true',
     /** Random seed for reproducible experiments (default: current timestamp) */
@@ -74,6 +76,17 @@ export const CONFIG = {
       hungerCost: env('MOVE_HUNGER_COST', 0.5),
       /** Extra cost multiplier for consecutive moves (discourages spam) */
       consecutivePenalty: env('MOVE_CONSECUTIVE_PENALTY', 0.5),
+      /** Scent duration in ticks (stigmergy) */
+      scentDurationTicks: env('SCENT_DURATION_TICKS', 20),
+    },
+
+    signal: {
+      /** Base energy cost for signaling */
+      energyCost: env('SIGNAL_ENERGY_COST', 5),
+      /** Range multiplier (intensity * multiplier) */
+      rangeMultiplier: env('SIGNAL_RANGE_MULTIPLIER', 10),
+      /** Max intensity */
+      maxIntensity: env('SIGNAL_MAX_INTENSITY', 5),
     },
 
     gather: {

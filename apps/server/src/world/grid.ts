@@ -127,7 +127,46 @@ export function getPath(from: Position, to: Position): Position[] {
 }
 
 /**
- * Filter agents visible from a position (same location)
+ * Get compass direction from start to end position
+ */
+export function getDirection(from: Position, to: Position): 'north' | 'north-east' | 'east' | 'south-east' | 'south' | 'south-west' | 'west' | 'north-west' | 'here' {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+
+  if (dx === 0 && dy === 0) return 'here';
+
+  // Calculate angle in degrees
+  let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+  // Normalize to 0-360, starting from East (0) counter-clockwise
+  // But grid Y grows downwards? Need to check coordinate system.
+  // In typical grid: (0,0) top-left. Y increases down.
+  // East: dx > 0, dy = 0. atan2(0, 1) = 0.
+  // South: dx = 0, dy > 0. atan2(1, 0) = 90.
+  // West: dx < 0, dy = 0. atan2(0, -1) = 180.
+  // North: dx = 0, dy < 0. atan2(-1, 0) = -90.
+
+  if (angle < 0) angle += 360;
+
+  // Directions (approximate 45 degree sectors)
+  // 0 +/- 22.5 -> East
+  // 45 +/- 22.5 -> South-East
+  // 90 +/- 22.5 -> South
+  // ...
+
+  if (angle >= 337.5 || angle < 22.5) return 'east';
+  if (angle >= 22.5 && angle < 67.5) return 'south-east';
+  if (angle >= 67.5 && angle < 112.5) return 'south';
+  if (angle >= 112.5 && angle < 157.5) return 'south-west';
+  if (angle >= 157.5 && angle < 202.5) return 'west';
+  if (angle >= 202.5 && angle < 247.5) return 'north-west';
+  if (angle >= 247.5 && angle < 292.5) return 'north';
+  if (angle >= 292.5 && angle < 337.5) return 'north-east';
+
+  return 'here'; // Should be unreachable
+}
+
+/**
+ * Get all agents at a specific position
  */
 export function getAgentsAtPosition(agents: Agent[], pos: Position): Agent[] {
   return agents.filter((a) => a.x === pos.x && a.y === pos.y && a.state !== 'dead');

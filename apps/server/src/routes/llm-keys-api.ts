@@ -2,10 +2,14 @@
  * LLM API Keys Routes
  *
  * Manages API keys for LLM providers.
+ *
+ * NOTE: Write endpoints (POST) require admin authentication via X-Admin-Key header.
+ * Read endpoints (GET) are public for frontend status display.
+ *
  * - GET /api/llm/keys/status - Get status of all providers (masked keys only)
- * - POST /api/llm/keys - Set user-provided API keys
- * - POST /api/llm/keys/disable - Disable specific providers
- * - POST /api/llm/keys/enable - Enable specific providers
+ * - POST /api/llm/keys - Set user-provided API keys (requires admin auth)
+ * - POST /api/llm/keys/disable - Disable specific providers (requires admin auth)
+ * - POST /api/llm/keys/enable - Enable specific providers (requires admin auth)
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -19,6 +23,7 @@ import {
   setDisabledKeys,
   clearRuntimeKey,
 } from '../llm/key-manager';
+import { requireAdmin } from '../middleware/auth';
 
 // =============================================================================
 // Types
@@ -92,7 +97,7 @@ export async function registerLLMKeysRoutes(server: FastifyInstance): Promise<vo
   });
 
   /**
-   * POST /api/llm/keys
+   * POST /api/llm/keys (requires admin auth)
    *
    * Set user-provided API keys.
    * Keys are stored in runtime memory (lost on restart).
@@ -101,7 +106,7 @@ export async function registerLLMKeysRoutes(server: FastifyInstance): Promise<vo
   server.post<{
     Body: SetKeysRequest;
     Reply: KeysStatusResponse;
-  }>('/api/llm/keys', async (request, reply) => {
+  }>('/api/llm/keys', { preHandler: [requireAdmin] }, async (request, reply) => {
     const { keys } = request.body || {};
 
     if (keys && typeof keys === 'object') {
@@ -112,7 +117,7 @@ export async function registerLLMKeysRoutes(server: FastifyInstance): Promise<vo
   });
 
   /**
-   * POST /api/llm/keys/disable
+   * POST /api/llm/keys/disable (requires admin auth)
    *
    * Disable specific providers.
    * Disabled providers won't be used even if keys exist.
@@ -120,7 +125,7 @@ export async function registerLLMKeysRoutes(server: FastifyInstance): Promise<vo
   server.post<{
     Body: DisableKeysRequest;
     Reply: KeysStatusResponse;
-  }>('/api/llm/keys/disable', async (request, reply) => {
+  }>('/api/llm/keys/disable', { preHandler: [requireAdmin] }, async (request, reply) => {
     const { types } = request.body || {};
 
     if (Array.isArray(types)) {
@@ -133,14 +138,14 @@ export async function registerLLMKeysRoutes(server: FastifyInstance): Promise<vo
   });
 
   /**
-   * POST /api/llm/keys/enable
+   * POST /api/llm/keys/enable (requires admin auth)
    *
    * Re-enable specific providers.
    */
   server.post<{
     Body: EnableKeysRequest;
     Reply: KeysStatusResponse;
-  }>('/api/llm/keys/enable', async (request, reply) => {
+  }>('/api/llm/keys/enable', { preHandler: [requireAdmin] }, async (request, reply) => {
     const { types } = request.body || {};
 
     if (Array.isArray(types)) {
@@ -153,7 +158,7 @@ export async function registerLLMKeysRoutes(server: FastifyInstance): Promise<vo
   });
 
   /**
-   * POST /api/llm/keys/clear
+   * POST /api/llm/keys/clear (requires admin auth)
    *
    * Clear a user-provided API key for a specific provider.
    * Does not affect environment variable keys.
@@ -161,7 +166,7 @@ export async function registerLLMKeysRoutes(server: FastifyInstance): Promise<vo
   server.post<{
     Body: ClearKeyRequest;
     Reply: KeysStatusResponse;
-  }>('/api/llm/keys/clear', async (request, reply) => {
+  }>('/api/llm/keys/clear', { preHandler: [requireAdmin] }, async (request, reply) => {
     const { type } = request.body || {};
 
     if (type) {
@@ -172,7 +177,7 @@ export async function registerLLMKeysRoutes(server: FastifyInstance): Promise<vo
   });
 
   /**
-   * POST /api/llm/keys/sync
+   * POST /api/llm/keys/sync (requires admin auth)
    *
    * Bulk sync from frontend.
    * Sets both keys and disabled status in one request.
@@ -184,7 +189,7 @@ export async function registerLLMKeysRoutes(server: FastifyInstance): Promise<vo
       disabled?: LLMType[];
     };
     Reply: KeysStatusResponse;
-  }>('/api/llm/keys/sync', async (request, reply) => {
+  }>('/api/llm/keys/sync', { preHandler: [requireAdmin] }, async (request, reply) => {
     const { keys, disabled } = request.body || {};
 
     if (keys && typeof keys === 'object') {

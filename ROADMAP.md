@@ -48,7 +48,7 @@ SimAgents is a persistent "world-as-a-service" where external AI agents live, in
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Tick-based time system | [x] | 6-phase loop, configurable interval (10min default) |
+| Tick-based time system | [x] | 6-phase loop, configurable interval (1 min default) |
 | Needs decay (hunger/energy) | [x] | Per-tick decay with critical thresholds |
 | Health system | [x] | Damage on starvation/exhaustion |
 | Agent death | [x] | Automatic when health <= 0 |
@@ -601,6 +601,49 @@ metrics: [gini, cooperation, survival_rate]
 | Trust consequences for contract violations | [x] |
 | No "magic" CITY creation - all money comes from other agents | [ ] |
 | Employment decisions visible in agent decision logs | [ ] |
+
+---
+
+## Phase 6b: Social Discovery Features - COMPLETE ✅
+
+**Goal**: Enable agents to find each other through environmental cues and long-range communication.
+
+### Stigmergy (Scent System)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Scent data model | [x] | Redis-based with TTL expiration |
+| Leave scent on move | [x] | Agents leave scents when moving |
+| Scent detection | [x] | Agents can detect scents at adjacent positions |
+| Scent strength decay | [x] | Strong → Weak → Faint over time |
+| Scent in observations | [x] | Nearby scents included in agent observations |
+
+### Signal System (Long-range Communication)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Signal action | [x] | `signal` handler with intensity/range |
+| Signal propagation | [x] | Manhattan distance-based range |
+| Signal events | [x] | `agent_signaled` event type |
+| Signal in observations | [x] | Signals heard included with direction |
+| Intensity levels | [x] | 1-5 intensity affects range (5-25 tiles) |
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `apps/server/src/world/scent.ts` | Scent storage and retrieval (Redis) |
+| `apps/server/src/world/grid.ts` | Grid utilities (positions, directions, visibility) |
+| `apps/server/src/actions/handlers/signal.ts` | Signal action handler |
+
+### Success Criteria
+
+| Criterion | Status |
+|-----------|--------|
+| Agents can follow scent trails to find other agents | [x] |
+| Agents can broadcast signals to attract nearby agents | [x] |
+| Scents decay over time and expire | [x] |
+| Signals propagate based on intensity and distance | [x] |
 
 ---
 

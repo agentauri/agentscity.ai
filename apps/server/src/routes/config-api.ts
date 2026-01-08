@@ -3,6 +3,9 @@
  *
  * Exposes simulation configuration to the frontend.
  * Allows viewing and modifying configuration parameters.
+ *
+ * NOTE: Write endpoints (POST) require admin authentication via X-Admin-Key header.
+ * Read endpoints (GET) are public for frontend display.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -22,6 +25,7 @@ import {
   resetPersonalityWeights,
   type PersonalityTrait,
 } from '../agents/personalities';
+import { requireAdmin } from '../middleware/auth';
 
 // =============================================================================
 // Types
@@ -315,8 +319,9 @@ export async function registerConfigRoutes(server: FastifyInstance): Promise<voi
     };
   });
 
-  // Update configuration
+  // Update configuration (requires admin auth)
   server.post<{ Body: ConfigUpdateRequest }>('/api/config', {
+    preHandler: [requireAdmin],
     schema: {
       body: {
         type: 'object',
@@ -536,8 +541,9 @@ export async function registerConfigRoutes(server: FastifyInstance): Promise<voi
     };
   });
 
-  // Reset configuration to defaults
+  // Reset configuration to defaults (requires admin auth)
   server.post('/api/config/reset', {
+    preHandler: [requireAdmin],
     schema: {
       response: {
         200: {
@@ -584,8 +590,9 @@ export async function registerConfigRoutes(server: FastifyInstance): Promise<voi
     return getGenesisConfig();
   });
 
-  // Update genesis configuration
+  // Update genesis configuration (requires admin auth)
   server.post<{ Body: Partial<GenesisConfig> }>('/api/config/genesis', {
+    preHandler: [requireAdmin],
     schema: {
       body: {
         type: 'object',
@@ -672,13 +679,14 @@ export async function registerConfigRoutes(server: FastifyInstance): Promise<voi
     };
   });
 
-  // Update personality weights
+  // Update personality weights (requires admin auth)
   server.post<{
     Body: {
       weights?: Partial<Record<PersonalityTrait, number>>;
       enabled?: boolean;
     };
   }>('/api/config/personalities', {
+    preHandler: [requireAdmin],
     schema: {
       body: {
         type: 'object',
@@ -731,8 +739,9 @@ export async function registerConfigRoutes(server: FastifyInstance): Promise<voi
     };
   });
 
-  // Reset personality weights to defaults
+  // Reset personality weights to defaults (requires admin auth)
   server.post('/api/config/personalities/reset', {
+    preHandler: [requireAdmin],
     schema: {
       response: {
         200: {

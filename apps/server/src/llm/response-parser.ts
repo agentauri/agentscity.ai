@@ -7,11 +7,22 @@ import type { ActionType } from '../actions/types';
 import { randomChoice } from '../utils/random';
 
 const VALID_ACTIONS: ActionType[] = [
+  // Core survival actions
   'move', 'buy', 'consume', 'sleep', 'work', 'gather', 'trade',
+  // Phase 1: Emergence Observation
+  'claim', 'name_location',
   // Phase 2: Conflict Actions
   'harm', 'steal', 'deceive',
   // Phase 2: Social Discovery
   'share_info',
+  // Phase 4: Verifiable Credentials
+  'issue_credential', 'revoke_credential',
+  // Phase 4: Gossip Protocol
+  'spread_gossip',
+  // Phase 4: Reproduction
+  'spawn_offspring',
+  // Employment System
+  'offer_job', 'accept_job', 'pay_worker', 'claim_escrow', 'quit_job', 'fire_worker', 'cancel_job_offer',
 ];
 
 /**
@@ -184,6 +195,119 @@ function validateActionParams(
         if (typeof params.sentiment !== 'number' || params.sentiment < -100 || params.sentiment > 100) {
           return { valid: false, error: 'share_info sentiment must be between -100 and 100' };
         }
+      }
+      break;
+
+    // Phase 1: Emergence Observation
+    case 'claim':
+      if (!['territory', 'home', 'resource', 'danger', 'meeting_point'].includes(params.claimType as string)) {
+        return { valid: false, error: 'claim claimType must be territory, home, resource, danger, or meeting_point' };
+      }
+      break;
+
+    case 'name_location':
+      if (typeof params.name !== 'string' || params.name.length < 1 || params.name.length > 50) {
+        return { valid: false, error: 'name_location name must be 1-50 characters' };
+      }
+      break;
+
+    // Phase 4: Verifiable Credentials
+    case 'issue_credential':
+      if (typeof params.subjectAgentId !== 'string') {
+        return { valid: false, error: 'issue_credential requires subjectAgentId string' };
+      }
+      if (!['skill', 'experience', 'membership', 'character', 'custom'].includes(params.claimType as string)) {
+        return { valid: false, error: 'issue_credential claimType must be skill, experience, membership, character, or custom' };
+      }
+      if (typeof params.description !== 'string' || params.description.length < 1) {
+        return { valid: false, error: 'issue_credential requires description string' };
+      }
+      break;
+
+    case 'revoke_credential':
+      if (typeof params.credentialId !== 'string') {
+        return { valid: false, error: 'revoke_credential requires credentialId string' };
+      }
+      break;
+
+    // Phase 4: Gossip Protocol
+    case 'spread_gossip':
+      if (typeof params.targetAgentId !== 'string') {
+        return { valid: false, error: 'spread_gossip requires targetAgentId string' };
+      }
+      if (typeof params.subjectAgentId !== 'string') {
+        return { valid: false, error: 'spread_gossip requires subjectAgentId string' };
+      }
+      if (!['skill', 'behavior', 'transaction', 'warning', 'recommendation'].includes(params.topic as string)) {
+        return { valid: false, error: 'spread_gossip topic must be skill, behavior, transaction, warning, or recommendation' };
+      }
+      if (typeof params.claim !== 'string') {
+        return { valid: false, error: 'spread_gossip requires claim string' };
+      }
+      if (typeof params.sentiment !== 'number' || params.sentiment < -100 || params.sentiment > 100) {
+        return { valid: false, error: 'spread_gossip sentiment must be between -100 and 100' };
+      }
+      break;
+
+    // Phase 4: Reproduction
+    case 'spawn_offspring':
+      // Most params are optional
+      if (params.partnerId !== undefined && typeof params.partnerId !== 'string') {
+        return { valid: false, error: 'spawn_offspring partnerId must be a string' };
+      }
+      if (params.mutationIntensity !== undefined) {
+        if (typeof params.mutationIntensity !== 'number' || params.mutationIntensity < 0 || params.mutationIntensity > 1) {
+          return { valid: false, error: 'spawn_offspring mutationIntensity must be 0-1' };
+        }
+      }
+      break;
+
+    // Employment System
+    case 'offer_job':
+      if (typeof params.salary !== 'number' || params.salary < 1) {
+        return { valid: false, error: 'offer_job salary must be at least 1' };
+      }
+      if (typeof params.duration !== 'number' || params.duration < 1) {
+        return { valid: false, error: 'offer_job duration must be at least 1' };
+      }
+      if (!['upfront', 'on_completion', 'per_tick'].includes(params.paymentType as string)) {
+        return { valid: false, error: 'offer_job paymentType must be upfront, on_completion, or per_tick' };
+      }
+      break;
+
+    case 'accept_job':
+      if (typeof params.jobOfferId !== 'string') {
+        return { valid: false, error: 'accept_job requires jobOfferId string' };
+      }
+      break;
+
+    case 'pay_worker':
+      if (typeof params.employmentId !== 'string') {
+        return { valid: false, error: 'pay_worker requires employmentId string' };
+      }
+      break;
+
+    case 'claim_escrow':
+      if (typeof params.employmentId !== 'string') {
+        return { valid: false, error: 'claim_escrow requires employmentId string' };
+      }
+      break;
+
+    case 'quit_job':
+      if (typeof params.employmentId !== 'string') {
+        return { valid: false, error: 'quit_job requires employmentId string' };
+      }
+      break;
+
+    case 'fire_worker':
+      if (typeof params.employmentId !== 'string') {
+        return { valid: false, error: 'fire_worker requires employmentId string' };
+      }
+      break;
+
+    case 'cancel_job_offer':
+      if (typeof params.jobOfferId !== 'string') {
+        return { valid: false, error: 'cancel_job_offer requires jobOfferId string' };
       }
       break;
   }

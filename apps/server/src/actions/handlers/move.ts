@@ -14,6 +14,7 @@ import type { Agent } from '../../db/schema';
 import { isValidPosition, getPath, getDistance } from '../../world/grid';
 import { getVitalsPenalty } from '../utils/vitals-penalty';
 import { getRuntimeConfig } from '../../config';
+import { leaveScent } from '../../world/scent';
 
 export async function handleMove(
   intent: ActionIntent<MoveParams>,
@@ -87,6 +88,9 @@ export async function handleMove(
 
   // Calculate hunger cost (also affected by consecutive penalty)
   const hungerCost = baseHungerCost * consecutiveMultiplier;
+
+  // Leave scent trace at current position (stigmergy)
+  await leaveScent(from.x, from.y, agent.id, intent.tick);
 
   // Success - move one step towards destination
   return {

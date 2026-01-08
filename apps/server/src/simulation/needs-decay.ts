@@ -350,6 +350,9 @@ export async function applyNeedsDecay(agent: Agent, tick: number): Promise<Decay
       deathCause = 'exhaustion';
     }
 
+    // Clean up memory: remove dead agent from criticalTicksMap to prevent memory leak
+    criticalTicksMap.delete(agent.id);
+
     await killAgent(agent.id);
   } else {
     // Update agent state - only change state if forcing sleep due to critical energy

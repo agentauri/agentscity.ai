@@ -23,10 +23,9 @@ import { handleShareInfo } from './handlers/share-info';
 // Phase 4: Verifiable Credentials (§34)
 import { handleIssueCredential } from './handlers/issue-credential';
 import { handleRevokeCredential } from './handlers/revoke-credential';
-// Phase 4: Gossip Protocol (§35)
 import { handleSpreadGossip } from './handlers/spread-gossip';
-// Phase 4: Reproduction (§36)
 import { handleSpawnOffspring } from './handlers/spawn-offspring';
+import { handleSignal } from './handlers/signal';
 // Employment System
 import { handleOfferJob } from './handlers/offer-job';
 import { handleAcceptJob } from './handlers/accept-job';
@@ -63,6 +62,7 @@ handlers.set('revoke_credential', handleRevokeCredential as ActionHandler);
 handlers.set('spread_gossip', handleSpreadGossip as ActionHandler);
 // Phase 4: Reproduction (§36)
 handlers.set('spawn_offspring', handleSpawnOffspring as ActionHandler);
+handlers.set('signal', handleSignal as ActionHandler);
 // Employment System
 handlers.set('offer_job', handleOfferJob as ActionHandler);
 handlers.set('accept_job', handleAcceptJob as ActionHandler);

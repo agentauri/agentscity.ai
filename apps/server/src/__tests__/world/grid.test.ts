@@ -314,3 +314,26 @@ describe('getVisibleAgents', () => {
     expect(result).toHaveLength(0); // 4 > 3, so not visible
   });
 });
+
+describe('getDirection', () => {
+  const { getDirection } = require('../../world/grid');
+  const center = { x: 50, y: 50 };
+
+  test('returns here for same position', () => {
+    expect(getDirection(center, center)).toBe('here');
+  });
+
+  test('calculates cardinal directions correctly', () => {
+    expect(getDirection(center, { x: 60, y: 50 })).toBe('east');
+    expect(getDirection(center, { x: 40, y: 50 })).toBe('west');
+    expect(getDirection(center, { x: 50, y: 60 })).toBe('south'); // Y increases down
+    expect(getDirection(center, { x: 50, y: 40 })).toBe('north');
+  });
+
+  test('calculates ordinal directions correctly', () => {
+    expect(getDirection(center, { x: 60, y: 60 })).toBe('south-east');
+    expect(getDirection(center, { x: 40, y: 60 })).toBe('south-west');
+    expect(getDirection(center, { x: 60, y: 40 })).toBe('north-east');
+    expect(getDirection(center, { x: 40, y: 40 })).toBe('north-west');
+  });
+});

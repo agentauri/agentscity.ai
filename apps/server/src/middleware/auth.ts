@@ -3,13 +3,67 @@
  *
  * Provides API key verification for external agent endpoints.
  * API keys are hashed using SHA-256 for secure storage.
+ *
+ * Also provides admin authentication for internal API endpoints.
  */
 
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { db, externalAgents } from '../db';
 import type { ExternalAgent } from '../db/schema';
+
+// =============================================================================
+// Admin Authentication
+// =============================================================================
+
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY || 'admin_secret_key_change_me';
+
+// Warn at startup if using default key
+if (ADMIN_API_KEY === 'admin_secret_key_change_me') {
+  console.warn(
+    '[Auth] ⚠️  WARNING: Using default ADMIN_API_KEY. Set ADMIN_API_KEY env var in production!'
+  );
+}
+
+/**
+ * Timing-safe string comparison to prevent timing attacks
+ */
+function timingSafeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    // Still do a comparison to maintain constant time even for length mismatch
+    const dummy = Buffer.from(a);
+    timingSafeEqual(dummy, dummy);
+    return false;
+  }
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+/**
+ * Fastify preHandler hook for admin authentication.
+ * Checks for X-Admin-Key header with timing-safe comparison.
+ */
+export async function requireAdmin(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
+  const apiKey = request.headers['x-admin-key'] as string | undefined;
+
+  if (!apiKey || !timingSafeCompare(apiKey, ADMIN_API_KEY)) {
+    reply.code(401).send({
+      error: 'Unauthorized',
+      message: 'Invalid or missing admin API key',
+    });
+    return;
+  }
+}
+
+/**
+ * Check if admin API key is configured (not the default)
+ */
+export function isAdminKeyConfigured(): boolean {
+  return ADMIN_API_KEY !== 'admin_secret_key_change_me';
+}
 
 /**
  * Generate a new API key with prefix

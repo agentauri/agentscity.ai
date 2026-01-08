@@ -21,14 +21,18 @@ import type {
   AgentMemoryEntry,
   RelationshipInfo,
   KnownAgentEntry,
+  ScentTrace,
+  SignalHeard,
 } from '../llm/types';
 import { buildAvailableActions } from '../llm/prompt-builder';
-import { getVisibleAgents } from '../world/grid';
+import { getVisibleAgents, getAdjacentPositions, getDirection, getDistance } from '../world/grid';
 import { getAgentInventory } from '../db/queries/inventory';
 import { getRecentMemories, getAgentRelationships } from '../db/queries/memories';
 import { getKnownAgentsForObserver, type SharedInfo } from '../db/queries/knowledge';
 import { getNearbyClaims } from '../db/queries/claims';
 import { getNearbyNamedLocations, getLocationNamesForObserver } from '../db/queries/naming';
+import { getRecentSignals } from '../db/queries/events';
+import { getScentsAt, calculateScentStrength } from '../world/scent';
 import { CONFIG } from '../config';
 import { isBlackoutActive } from '../simulation/shocks';
 import { isPersonalityEnabled, isValidPersonality, type PersonalityTrait } from './personalities';
@@ -179,8 +183,9 @@ export async function buildObservation(
     informationAge: k.informationAge,
   }));
 
-  // Phase 1: Get nearby claims
-  const rawClaims = await getNearbyClaims(agent.x, agent.y, VISIBILITY_RADIUS);
+  // Phase 1: Get nearby claims (Landmarks visible from further away)
+  const LANDMARK_RADIUS = CONFIG.simulation.landmarkVisibilityRadius;
+  const rawClaims = await getNearbyClaims(agent.x, agent.y, LANDMARK_RADIUS);
   const nearbyClaims: NearbyClaim[] = rawClaims.map((c) => ({
     id: c.id,
     agentId: c.agentId,
@@ -192,8 +197,8 @@ export async function buildObservation(
     claimedAtTick: c.claimedAtTick,
   }));
 
-  // Phase 1: Get nearby location names
-  const rawNamedLocations = await getNearbyNamedLocations(agent.x, agent.y, VISIBILITY_RADIUS);
+  // Phase 1: Get nearby location names (Landmarks)
+  const rawNamedLocations = await getNearbyNamedLocations(agent.x, agent.y, LANDMARK_RADIUS);
   const nearbyLocationNames: Record<string, LocationNameEntry[]> = {};
 
   // Group names by position and get all names for each
@@ -203,6 +208,56 @@ export async function buildObservation(
       // Get all names for this position
       const names = await getLocationNamesForObserver(loc.x, loc.y);
       nearbyLocationNames[key] = names;
+    }
+  }
+
+  // Feature 1: Stigmergy (Scents)
+  // getAdjacentPositions uses WORLD_SIZE internally for bounds checking
+  const adjacentPositions = getAdjacentPositions({ x: agent.x, y: agent.y });
+  adjacentPositions.push({ x: agent.x, y: agent.y }); // Include current pos
+
+  const rawScents = await getScentsAt(adjacentPositions);
+  const scents: ScentTrace[] = rawScents
+    .filter(s => s.agentId !== agent.id) // Don't smell self
+    .map((s) => ({
+      x: s.x,
+      y: s.y,
+      strength: calculateScentStrength(s.tick, tick),
+      agentId: s.agentId, // In real stigmergy ID is unknown, but here we allow it for "recognition" if known
+    }));
+
+  // Feature 2: Signals (Long-range)
+  const rawSignals = await getRecentSignals(tick);
+  const signals: SignalHeard[] = [];
+
+  for (const sigEvent of rawSignals) {
+    if (sigEvent.agentId === agent.id) continue; // Ignore own signals
+
+    const payload = sigEvent.payload as Record<string, unknown>;
+
+    // Validate payload has required fields before accessing
+    if (
+      typeof payload?.x !== 'number' ||
+      typeof payload?.y !== 'number' ||
+      typeof payload?.range !== 'number' ||
+      typeof payload?.message !== 'string'
+    ) {
+      // Skip malformed signal events
+      continue;
+    }
+
+    const signalPos = { x: payload.x, y: payload.y };
+    // Use Manhattan distance for signal propagation (consistent with movement cost)
+    const dist = Math.abs(agent.x - signalPos.x) + Math.abs(agent.y - signalPos.y);
+
+    if (dist <= payload.range) {
+      const intensity = typeof payload.intensity === 'number' ? payload.intensity : 1;
+      signals.push({
+        direction: getDirection({ x: agent.x, y: agent.y }, signalPos),
+        message: payload.message,
+        intensity: intensity >= 4 ? 'loud' : 'quiet',
+        tick: sigEvent.tick,
+      });
     }
   }
 
@@ -223,6 +278,8 @@ export async function buildObservation(
     nearbyClaims,
     nearbyLocationNames,
     knownAgents,
+    scents,
+    signals,
   };
 
   // Add available actions

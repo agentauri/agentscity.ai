@@ -48,16 +48,24 @@ function createMockObservation(agent: Agent) {
       energy: agent.energy,
       health: agent.health,
       balance: agent.balance,
+      state: agent.state,
     },
     inventory: [],
     nearbyAgents: [],
     nearbyResources: [
-      { x: 51, y: 50, type: 'food', amount: 10 },
-      { x: 49, y: 50, type: 'energy', amount: 5 },
+      { x: 51, y: 50, resourceType: 'food', currentAmount: 10, maxAmount: 10 },
+      { x: 49, y: 50, resourceType: 'energy', currentAmount: 5, maxAmount: 10 },
     ],
     nearbyShelters: [],
+    nearbyLocations: [],
+    nearbyResourceSpawns: [
+      { id: 'res-1', x: 51, y: 50, resourceType: 'food', currentAmount: 10, maxAmount: 10 },
+      { id: 'res-2', x: 49, y: 50, resourceType: 'energy', currentAmount: 5, maxAmount: 10 },
+    ],
+    availableActions: [],
     recentEvents: [],
     tick: 1,
+    timestamp: Date.now(),
     worldSize: { width: 100, height: 100 },
   };
 }

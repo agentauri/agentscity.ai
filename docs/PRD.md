@@ -962,6 +962,26 @@ action: broadcast("Looking for a carpenter for hire")
 
 > **Note**: This makes the simulation more realistic—new agents must build networks, established agents have social capital, and information is imperfect and asymmetric.
 
+### 7.7 Social Discovery & Stigmergy (Implemented)
+
+To facilitate interaction without providing a global map, the system provides **stigmergic** and **signal-based** discovery mechanisms:
+
+#### Stigmergy (Scents)
+- Agents leave a "scent trace" when they move.
+- Other agents in adjacent cells can perceive these traces.
+- Traces decay over time (e.g., 20 ticks).
+- **Effect**: Agents can track movement patterns or find busy areas by following trails.
+
+#### Long-Range Signals (Shouts)
+- Agents can perform a `signal` action (costly).
+- Signals broadcast a short message within a large radius (e.g., 50 tiles).
+- Receivers hear the message and the **approximate direction** (e.g., "North-East"), not coordinates.
+- **Effect**: Enables "hailing frequencies" or gathering cries.
+
+#### Extended Landmark Visibility
+- Named locations (`name_location`) and Claims (`claim`) are visible from much further away than agents (e.g., 25 tiles vs 10).
+- **Effect**: Encourages agents to create and name landmarks to aid navigation.
+
 ---
 
 ## 8. Economy & Payments (x402-like)

@@ -10,13 +10,14 @@
  * - Available actions filtering
  */
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, beforeAll } from 'bun:test';
 import {
   buildSystemPrompt,
   buildObservationPrompt,
   buildFullPrompt,
   buildAvailableActions,
 } from '../../llm/prompt-builder';
+import { setEmergentPromptMode } from '../../config';
 import type { AgentObservation, AvailableAction } from '../../llm/types';
 
 // Helper to create minimal observation
@@ -42,6 +43,11 @@ function createMockObservation(overrides: Partial<AgentObservation> = {}): Agent
     ...overrides,
   };
 }
+
+// Disable emergent prompt mode for these tests to verify prescriptive prompt logic
+beforeAll(() => {
+  setEmergentPromptMode(false);
+});
 
 describe('buildSystemPrompt', () => {
   test('returns non-empty string', () => {
@@ -79,7 +85,7 @@ describe('buildSystemPrompt', () => {
 
   test('contains survival strategy', () => {
     const prompt = buildSystemPrompt();
-    expect(prompt).toContain('Survival Strategy');
+    expect(prompt).toContain('CRITICAL SURVIVAL WORKFLOW');
     expect(prompt).toContain('PRIORITY ORDER');
   });
 
@@ -112,7 +118,7 @@ describe('buildObservationPrompt', () => {
         self: { ...createMockObservation().self, hunger: 75 },
       });
       const prompt = buildObservationPrompt(obs);
-      expect(prompt).toContain('Hunger: 75.0/100');
+      expect(prompt).toContain('Hunger: 75.0/100 [OK]');
     });
 
     test('includes energy with status emoji', () => {
@@ -120,7 +126,7 @@ describe('buildObservationPrompt', () => {
         self: { ...createMockObservation().self, energy: 50 },
       });
       const prompt = buildObservationPrompt(obs);
-      expect(prompt).toContain('Energy: 50.0/100');
+      expect(prompt).toContain('Energy: 50.0/100 [WARN]');
     });
 
     test('includes health', () => {
@@ -128,7 +134,7 @@ describe('buildObservationPrompt', () => {
         self: { ...createMockObservation().self, health: 85 },
       });
       const prompt = buildObservationPrompt(obs);
-      expect(prompt).toContain('Health: 85.0/100');
+      expect(prompt).toContain('Health: 85.0/100 [OK]');
     });
 
     test('includes balance', () => {
@@ -773,6 +779,22 @@ describe('buildAvailableActions', () => {
     test('available when not sleeping and has energy', () => {
       const obs = createMockObservation({
         self: { ...createMockObservation().self, state: 'idle', energy: 10 },
+        activeEmployments: [{
+          id: 'test-emp',
+          employerId: 'employer',
+          workerId: 'test-agent-id',
+          role: 'worker',
+          salary: 10,
+          paymentType: 'per_tick',
+          escrowAmount: 0,
+          ticksRequired: 5,
+          ticksWorked: 0,
+          amountPaid: 0,
+          isComplete: false,
+          needsPayment: false,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }]
       });
       const actions = buildAvailableActions(obs);
       const workAction = actions.find((a) => a.type === 'work');
