@@ -12,6 +12,20 @@
 
 ---
 
+## Public Documentation (doc.simagents.io)
+
+User-facing documentation organized by audience:
+
+| Document | Audience | Description |
+|----------|----------|-------------|
+| **[Overview](public/index.md)** | Everyone | Landing page and navigation |
+| **[Why SimAgents?](public/why-simagents.md)** | Decision-makers | Vision, philosophy, use cases |
+| **[Getting Started](public/getting-started.md)** | Developers | Setup, first simulation, connecting agents |
+| **[Research Guide](public/research-guide.md)** | Researchers | Experiment design, metrics, reproducibility |
+| **[API Reference](public/api-reference.md)** | Developers | Complete API documentation |
+
+---
+
 ## Getting Started
 
 - **[README](../README.md)** - Quick start guide and project overview
@@ -31,7 +45,7 @@
   - Actions catalog (Section 9, 24)
   - Governance (Section 11)
   - Advanced features (Sections 34-40)
-  - **NEW**: Employment System (Section 41) 🚧
+  - Employment System (Section 41)
 
 ### Technical Reference
 
@@ -72,10 +86,8 @@
   - API endpoints
 
 - **[ROADMAP](../ROADMAP.md)** - Implementation progress
-  - Phases 0-5 complete
-  - **Phase 6 in progress**: Employment System 🚧
+  - All phases complete (0-6)
   - Technical debt tracking
-  - Recent commits
 
 ---
 
@@ -84,7 +96,7 @@
 ```
 README.md           ─── Quick start, links to docs
     │
-    ├── ROADMAP.md      ─── Implementation status (single source of truth)
+    ├── ROADMAP.md      ─── Implementation status
     │
     ├── CONTRIBUTING.md ─── How to contribute
     │
@@ -95,6 +107,13 @@ README.md           ─── Quick start, links to docs
         │
         ├── experiment-design-guide.md ─── Research guide
         │
+        ├── public/         ─── User-facing docs (doc.simagents.io)
+        │   ├── index.md
+        │   ├── why-simagents.md
+        │   ├── getting-started.md
+        │   ├── research-guide.md
+        │   └── api-reference.md
+        │
         └── appendix/
             ├── scientific-framework.md ─── Validation methodology
             └── stack-rationale.md      ─── Technical decisions
@@ -102,4 +121,4 @@ README.md           ─── Quick start, links to docs
 
 ---
 
-*Last updated: January 7, 2026*
+*Last updated: January 11, 2026*
