@@ -1,0 +1,44 @@
+# GitHub Actions workflow for deploying landing page to Cloudflare Pages
+name: Deploy Landing
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/landing/**'
+      - '.github/workflows/deploy-landing.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-landing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy apps/landing --project-name=simagents-landing
+
+      - name: Post deployment summary
+        if: always()
+        run: |
+          echo "## Landing Page Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL:** https://simagents.io" >> $GITHUB_STEP_SUMMARY
