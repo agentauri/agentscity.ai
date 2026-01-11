@@ -1,0 +1,109 @@
+/**
+ * SimAgents Documentation - Custom Styles
+ */
+
+/* Light mode */
+:root {
+  --ifm-color-primary: #6366f1;
+  --ifm-color-primary-dark: #4f46e5;
+  --ifm-color-primary-darker: #4338ca;
+  --ifm-color-primary-darkest: #3730a3;
+  --ifm-color-primary-light: #818cf8;
+  --ifm-color-primary-lighter: #a5b4fc;
+  --ifm-color-primary-lightest: #c7d2fe;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(99, 102, 241, 0.1);
+  --ifm-font-family-base: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Dark mode */
+[data-theme='dark'] {
+  --ifm-color-primary: #818cf8;
+  --ifm-color-primary-dark: #6366f1;
+  --ifm-color-primary-darker: #4f46e5;
+  --ifm-color-primary-darkest: #4338ca;
+  --ifm-color-primary-light: #a5b4fc;
+  --ifm-color-primary-lighter: #c7d2fe;
+  --ifm-color-primary-lightest: #e0e7ff;
+  --docusaurus-highlighted-code-line-bg: rgba(129, 140, 248, 0.2);
+  --ifm-background-color: #0f172a;
+  --ifm-background-surface-color: #1e293b;
+}
+
+/* Hero section styling */
+.hero {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
+}
+
+[data-theme='light'] .hero {
+  background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 50%, #a5b4fc 100%);
+}
+
+/* Code blocks */
+.prism-code {
+  border-radius: 8px;
+}
+
+/* Tables */
+table {
+  display: table;
+  width: 100%;
+}
+
+th {
+  background: var(--ifm-color-primary-lightest);
+}
+
+[data-theme='dark'] th {
+  background: var(--ifm-color-primary-darkest);
+}
+
+/* Sidebar */
+.menu__link {
+  border-radius: 4px;
+}
+
+.menu__link--active {
+  background: var(--ifm-color-primary-lightest);
+}
+
+[data-theme='dark'] .menu__link--active {
+  background: rgba(99, 102, 241, 0.2);
+}
+
+/* Footer */
+.footer {
+  background: #0f172a;
+}
+
+.footer__title {
+  color: #e2e8f0;
+}
+
+/* Navbar */
+.navbar {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] .navbar {
+  background: #1e293b;
+}
+
+/* Admonitions */
+.admonition {
+  border-radius: 8px;
+}
+
+/* Card-like appearance for docs */
+article {
+  max-width: 900px;
+}
+
+/* Improve readability */
+.markdown p {
+  line-height: 1.8;
+}
+
+.markdown li {
+  margin-bottom: 0.5rem;
+}

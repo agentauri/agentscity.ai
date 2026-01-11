@@ -6,7 +6,9 @@
     "dev": "bun run --filter '*' dev",
     "dev:server": "bun run --filter server dev",
     "dev:web": "bun run --filter web dev",
+    "dev:docs": "cd docs-site && npm start",
     "build": "bun run --filter '*' build",
+    "build:docs": "cd docs-site && npm run build",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "bun run --filter '*' lint",
     "test": "bun run --filter '*' test"
