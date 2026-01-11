@@ -2,13 +2,18 @@
  * Tests for Needs Decay System
  *
  * Tests cover:
- * - Hunger decay rate (1 per tick)
- * - Energy decay rate (0.5 per tick, 1.5 when hungry)
+ * - Hunger decay rate (0.6 per tick - from global config)
+ * - Energy decay rate (0.3 per tick base, 1.3 when hungry - from global config)
  * - Health damage on starvation (hunger < 10)
  * - Health damage on exhaustion (energy < 10)
  * - Death condition (health <= 0)
  * - Threshold transitions (low → critical)
  * - Survival ticks calculation
+ *
+ * NOTE: Decay rates use global config values. Tests assume:
+ * - hungerDecay: 0.6
+ * - energyDecay: 0.3
+ * - foodHungerRestore: 50
  */
 
 import { describe, expect, test, mock, beforeEach, afterEach } from 'bun:test';
@@ -56,11 +61,11 @@ describe('applyNeedsDecay', () => {
   });
 
   describe('hunger decay', () => {
-    test('decreases hunger by 1 per tick', async () => {
+    test('decreases hunger by 0.6 per tick (from global config)', async () => {
       const agent = createMockAgent({ hunger: 80, energy: 80, health: 100 });
       const result = await applyNeedsDecay(agent, 1);
 
-      expect(result.newState.hunger).toBe(79);
+      expect(result.newState.hunger).toBe(79.4);
       expect(result.effects).toContain('hunger_decreased');
     });
 
@@ -80,49 +85,48 @@ describe('applyNeedsDecay', () => {
   });
 
   describe('energy decay', () => {
-    test('decreases energy by 0.5 per tick when fed', async () => {
+    test('decreases energy by 0.3 per tick when fed (from global config)', async () => {
       const agent = createMockAgent({ hunger: 80, energy: 80, health: 100 });
       const result = await applyNeedsDecay(agent, 1);
 
-      expect(result.newState.energy).toBe(79.5);
+      expect(result.newState.energy).toBe(79.7);
       expect(result.effects).toContain('energy_decreased');
     });
 
     test('energy cannot go below 0', async () => {
-      const agent = createMockAgent({ hunger: 80, energy: 0.3, health: 100 });
+      const agent = createMockAgent({ hunger: 80, energy: 0.2, health: 100 });
       const result = await applyNeedsDecay(agent, 1);
 
       expect(result.newState.energy).toBe(0);
     });
 
     test('increases energy drain by 1 when hungry (hunger < 20)', async () => {
-      // When hunger < 20, energy drain = 0.5 + 1 = 1.5
+      // When hunger < 20, energy drain = 0.3 + 1 = 1.3
       const agent = createMockAgent({ hunger: 15, energy: 80, health: 100 });
       const result = await applyNeedsDecay(agent, 1);
 
-      // Hunger: 15 - 1 = 14 (after decay, still < 20)
-      // Energy: 80 - 1.5 = 78.5
-      expect(result.newState.energy).toBe(78.5);
+      // Hunger: 15 - 0.6 = 14.4 (after decay, still < 20)
+      // Energy: 80 - 1.3 = 78.7
+      expect(result.newState.energy).toBe(78.7);
     });
 
     test('no extra energy drain when hunger is exactly 20', async () => {
       const agent = createMockAgent({ hunger: 20, energy: 80, health: 100 });
       const result = await applyNeedsDecay(agent, 1);
 
-      // Hunger: 20 - 1 = 19 (triggers low_hunger_warning but decay happens first)
-      // At start, hunger=20 so no extra drain; energy = 80 - 0.5 = 79.5
-      // But wait - the decay happens first, so newHunger = 19 which IS < 20
-      // So energy drain = 0.5 + 1 = 1.5
-      expect(result.newState.energy).toBe(78.5);
+      // Hunger: 20 - 0.6 = 19.4 (triggers low_hunger_warning)
+      // newHunger = 19.4 which IS < 20, so extra drain applies
+      // Energy drain = 0.3 + 1 = 1.3
+      expect(result.newState.energy).toBe(78.7);
     });
 
     test('no extra energy drain when hunger is 21', async () => {
       const agent = createMockAgent({ hunger: 21, energy: 80, health: 100 });
       const result = await applyNeedsDecay(agent, 1);
 
-      // Hunger: 21 - 1 = 20 (exactly 20, which is NOT < 20)
-      // Energy: 80 - 0.5 = 79.5
-      expect(result.newState.energy).toBe(79.5);
+      // Hunger: 21 - 0.6 = 20.4 (exactly 20.4, which is NOT < 20)
+      // Energy: 80 - 0.3 = 79.7
+      expect(result.newState.energy).toBe(79.7);
     });
   });
 
@@ -397,9 +401,10 @@ describe('applyNeedsDecay', () => {
         energy: 60,
         health: 100,
       });
+      // hungerDecay: 0.6, energyDecay: 0.3
       expect(updateEvent?.payload?.newState).toEqual({
-        hunger: 49,
-        energy: 59.5,
+        hunger: 49.4,
+        energy: 59.7,
         health: 100,
       });
     });
@@ -410,9 +415,10 @@ describe('applyNeedsDecay', () => {
       const agent = createMockAgent({ hunger: 50, energy: 60, health: 100 });
       await applyNeedsDecay(agent, 1);
 
+      // hungerDecay: 0.6, energyDecay: 0.3
       expect(mockUpdateAgent).toHaveBeenCalledWith(agent.id, {
-        hunger: 49,
-        energy: 59.5,
+        hunger: 49.4,
+        energy: 59.7,
         health: 100,
       });
     });
@@ -421,21 +427,21 @@ describe('applyNeedsDecay', () => {
 
 describe('calculateSurvivalTicks', () => {
   test('calculates ticks based on hunger decay', () => {
-    // Hunger decay is 1 per tick
-    const ticks = calculateSurvivalTicks(10, 100);
-    expect(ticks).toBe(10); // 10 / 1 = 10 ticks
+    // Hunger decay is 0.6 per tick (from global config)
+    const ticks = calculateSurvivalTicks(6, 100);
+    expect(ticks).toBe(10); // 6 / 0.6 = 10 ticks
   });
 
   test('calculates ticks based on energy decay', () => {
-    // Energy decay is 0.5 per tick (base)
-    const ticks = calculateSurvivalTicks(100, 5);
-    expect(ticks).toBe(10); // 5 / 0.5 = 10 ticks
+    // Energy decay is 0.3 per tick (base, from global config)
+    const ticks = calculateSurvivalTicks(100, 3);
+    expect(ticks).toBe(10); // 3 / 0.3 = 10 ticks
   });
 
   test('returns minimum of hunger and energy ticks', () => {
-    // Hunger: 20 / 1 = 20 ticks
-    // Energy: 5 / 0.5 = 10 ticks
-    const ticks = calculateSurvivalTicks(20, 5);
+    // Hunger: 12 / 0.6 = 20 ticks
+    // Energy: 3 / 0.3 = 10 ticks
+    const ticks = calculateSurvivalTicks(12, 3);
     expect(ticks).toBe(10); // Energy runs out first
   });
 
@@ -445,9 +451,9 @@ describe('calculateSurvivalTicks', () => {
   });
 
   test('handles fractional values', () => {
-    // Hunger: 5.5 / 1 = 5.5 ticks
-    // Energy: 10 / 0.5 = 20 ticks
-    const ticks = calculateSurvivalTicks(5.5, 10);
+    // Hunger: 3.3 / 0.6 = 5.5 ticks
+    // Energy: 6 / 0.3 = 20 ticks
+    const ticks = calculateSurvivalTicks(3.3, 6);
     expect(ticks).toBe(5.5);
   });
 });

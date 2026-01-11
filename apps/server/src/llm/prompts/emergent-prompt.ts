@@ -263,8 +263,19 @@ When you decide to act, respond with ONLY a JSON object:
 
 **Resource Acquisition**
 - gather: Collect resources from the ground (if any exist here). Params: { "resourceType": "food"|"energy"|"material", "quantity": 1-5 }
+- forage: Search for scraps anywhere (low success, but always available). Params: {}
 - buy: Exchange currency for goods (requires being somewhere that sells). Params: { "itemType": "food"|"water"|"medicine", "quantity": number }
-- work: Exchange your labor for currency (at places that offer work). Params: { "duration": 1-5 }
+
+**Work & Employment**
+- public_work: Do basic labor at shelters for modest pay (always available). Params: { "taskType"?: "road_maintenance"|"resource_survey"|"shelter_cleanup" }
+- work: Fulfill your current employment contract. Params: { "duration": 1-5 }
+- offer_job: Post a job offering for others. Params: { "salary": number, "duration": number, "paymentType": "upfront"|"on_completion"|"per_tick", "escrowPercent"?: 0-100, "description"?: string }
+- accept_job: Accept an open job offer nearby. Params: { "jobOfferId": string }
+- pay_worker: Pay a worker for completed work. Params: { "employmentId": string }
+- claim_escrow: Claim escrowed payment after completing work. Params: { "employmentId": string }
+- quit_job: Leave your current employment. Params: { "employmentId": string }
+- fire_worker: Terminate a worker's employment. Params: { "employmentId": string }
+- cancel_job_offer: Cancel a job offer you posted. Params: { "jobOfferId": string }
 
 **Self Care**
 - consume: Use something from your possession. Params: { "itemType": "food"|"water"|"medicine" }
@@ -468,6 +479,59 @@ export function buildEmergentObservationPrompt(obs: AgentObservation): string {
         const here = distance === 0 ? ' (where you stand)' : '';
         lines.push(`- "${consensusName}"${here}`);
       }
+    }
+  }
+
+  // Employment: Job offers available nearby
+  if (obs.nearbyJobOffers && obs.nearbyJobOffers.length > 0) {
+    lines.push('');
+    lines.push('**Work Opportunities**');
+    for (const offer of obs.nearbyJobOffers) {
+      const distance = Math.abs(obs.self.x - offer.x) + Math.abs(obs.self.y - offer.y);
+      const location = distance === 0 ? 'here' : `${distance} steps away`;
+      const paymentDesc =
+        offer.paymentType === 'upfront'
+          ? 'paid upfront'
+          : offer.paymentType === 'per_tick'
+            ? 'paid per tick'
+            : 'paid on completion';
+      const escrowNote = offer.escrowPercent > 0 ? ` (${offer.escrowPercent}% escrow)` : '';
+      lines.push(
+        `- Job offering ${offer.salary} CITY for ${offer.duration} ticks of work (${paymentDesc}${escrowNote}) - ${location}`
+      );
+    }
+  }
+
+  // Employment: Active contracts (as worker or employer)
+  if (obs.activeEmployments && obs.activeEmployments.length > 0) {
+    lines.push('');
+    lines.push('**Your Work Contracts**');
+    for (const emp of obs.activeEmployments) {
+      const roleDesc = emp.role === 'worker' ? 'working for' : 'employing';
+      const progress = `${emp.ticksWorked}/${emp.ticksRequired} ticks`;
+      const status = emp.isComplete
+        ? emp.needsPayment
+          ? ' - COMPLETE, awaiting payment'
+          : ' - COMPLETE and paid'
+        : '';
+      lines.push(`- You are ${roleDesc} ${emp.otherPartyId.slice(0, 8)}: ${progress}${status}`);
+    }
+  }
+
+  // Employment: Job offers you've posted
+  if (obs.myJobOffers && obs.myJobOffers.length > 0) {
+    lines.push('');
+    lines.push('**Your Job Postings**');
+    for (const offer of obs.myJobOffers) {
+      const paymentDesc =
+        offer.paymentType === 'upfront'
+          ? 'upfront'
+          : offer.paymentType === 'per_tick'
+            ? 'per-tick'
+            : 'on-completion';
+      lines.push(
+        `- Offering ${offer.salary} CITY for ${offer.duration} ticks (${paymentDesc}, ${offer.escrowAmount} in escrow) - no takers yet`
+      );
     }
   }
 

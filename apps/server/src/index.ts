@@ -120,6 +120,7 @@ import { registerLLMKeysRoutes } from './routes/llm-keys-api';
 
 // System Prompt API routes
 import { registerPromptRoutes } from './routes/prompt-api';
+import { registerPromptInspectorRoutes } from './routes/prompt-inspector-api';
 
 // =============================================================================
 // Server Setup
@@ -340,6 +341,9 @@ await registerLLMKeysRoutes(server);
 
 // Register System Prompt routes
 await registerPromptRoutes(server);
+
+// Register Prompt Inspector routes (Phase 2: Live Inspector)
+await registerPromptInspectorRoutes(server);
 
 // =============================================================================
 // Health & Status Routes

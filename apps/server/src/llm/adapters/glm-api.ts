@@ -162,7 +162,14 @@ export class GLMAPIAdapter implements LLMAdapter {
       observation.self.energy,
       observation.self.balance,
       observation.self.x,
-      observation.self.y
+      observation.self.y,
+      observation.inventory,
+      observation.nearbyResourceSpawns,
+      observation.nearbyShelters,
+      // Social context (Phase 1.2)
+      observation.nearbyJobOffers,
+      observation.activeEmployments,
+      observation.nearbyAgents
     );
   }
 }

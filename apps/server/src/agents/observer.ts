@@ -23,6 +23,9 @@ import type {
   KnownAgentEntry,
   ScentTrace,
   SignalHeard,
+  NearbyJobOffer,
+  ActiveEmployment,
+  OpenJobOffer,
 } from '../llm/types';
 import { buildAvailableActions } from '../llm/prompt-builder';
 import { getVisibleAgents, getAdjacentPositions, getDirection, getDistance } from '../world/grid';
@@ -33,6 +36,12 @@ import { getNearbyClaims } from '../db/queries/claims';
 import { getNearbyNamedLocations, getLocationNamesForObserver } from '../db/queries/naming';
 import { getRecentSignals } from '../db/queries/events';
 import { getScentsAt, calculateScentStrength } from '../world/scent';
+import {
+  getOpenJobOffersNearPosition,
+  getActiveEmploymentsForWorker,
+  getActiveEmploymentsForEmployer,
+  getOpenJobOffersByEmployer,
+} from '../db/queries/employment';
 import { CONFIG } from '../config';
 import { isBlackoutActive } from '../simulation/shocks';
 import { isPersonalityEnabled, isValidPersonality, type PersonalityTrait } from './personalities';
@@ -261,6 +270,73 @@ export async function buildObservation(
     }
   }
 
+  // Employment System: Job offers, active contracts, own postings
+  // Only query if agent.id is a valid UUID (skip for mock agents in tests)
+  const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agent.id);
+
+  const [rawNearbyJobOffers, workerEmployments, employerEmployments, rawMyJobOffers] = isValidUuid
+    ? await Promise.all([
+        getOpenJobOffersNearPosition(agent.x, agent.y, VISIBILITY_RADIUS, tick),
+        getActiveEmploymentsForWorker(agent.id),
+        getActiveEmploymentsForEmployer(agent.id),
+        getOpenJobOffersByEmployer(agent.id),
+      ])
+    : [[], [], [], []];
+
+  // Map nearby job offers (exclude own offers)
+  const nearbyJobOffers: NearbyJobOffer[] = rawNearbyJobOffers
+    .filter((o) => o.employerId !== agent.id)
+    .map((o) => ({
+      id: o.id,
+      employerId: o.employerId,
+      salary: o.salary,
+      duration: o.duration,
+      paymentType: o.paymentType as NearbyJobOffer['paymentType'],
+      escrowPercent: o.salary > 0 ? Math.round((o.escrowAmount / o.salary) * 100) : 0,
+      description: o.description ?? undefined,
+      x: o.x,
+      y: o.y,
+    }));
+
+  // Map active employments (both as worker and employer)
+  const activeEmployments: ActiveEmployment[] = [
+    ...workerEmployments.map((e) => ({
+      id: e.id,
+      role: 'worker' as const,
+      otherPartyId: e.employerId,
+      salary: e.salary,
+      ticksWorked: e.ticksWorked,
+      ticksRequired: e.ticksRequired,
+      paymentType: e.paymentType as ActiveEmployment['paymentType'],
+      amountPaid: e.amountPaid,
+      isComplete: e.ticksWorked >= e.ticksRequired,
+      needsPayment: e.paymentType === 'on_completion' && e.ticksWorked >= e.ticksRequired && e.amountPaid < e.salary,
+    })),
+    ...employerEmployments.map((e) => ({
+      id: e.id,
+      role: 'employer' as const,
+      otherPartyId: e.workerId,
+      salary: e.salary,
+      ticksWorked: e.ticksWorked,
+      ticksRequired: e.ticksRequired,
+      paymentType: e.paymentType as ActiveEmployment['paymentType'],
+      amountPaid: e.amountPaid,
+      isComplete: e.ticksWorked >= e.ticksRequired,
+      needsPayment: e.paymentType === 'on_completion' && e.ticksWorked >= e.ticksRequired && e.amountPaid < e.salary,
+    })),
+  ];
+
+  // Map own job offers
+  const myJobOffers: OpenJobOffer[] = rawMyJobOffers.map((o) => ({
+    id: o.id,
+    salary: o.salary,
+    duration: o.duration,
+    paymentType: o.paymentType as OpenJobOffer['paymentType'],
+    escrowAmount: o.escrowAmount,
+    createdAtTick: o.createdAtTick,
+    expiresAtTick: o.expiresAtTick ?? undefined,
+  }));
+
   // Build available actions based on current state
   const observation: AgentObservation = {
     tick,
@@ -280,6 +356,10 @@ export async function buildObservation(
     knownAgents,
     scents,
     signals,
+    // Employment System
+    nearbyJobOffers,
+    activeEmployments,
+    myJobOffers,
   };
 
   // Add available actions

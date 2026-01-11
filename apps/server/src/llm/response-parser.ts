@@ -9,6 +9,10 @@ import { randomChoice } from '../utils/random';
 const VALID_ACTIONS: ActionType[] = [
   // Core survival actions
   'move', 'buy', 'consume', 'sleep', 'work', 'gather', 'trade',
+  // Survival fallbacks (always available)
+  'forage', 'public_work',
+  // Long-range communication
+  'signal',
   // Phase 1: Emergence Observation
   'claim', 'name_location',
   // Phase 2: Conflict Actions
@@ -125,6 +129,28 @@ function validateActionParams(
         if (typeof params.quantity !== 'number' || params.quantity < 1 || params.quantity > 5) {
           return { valid: false, error: 'gather quantity must be 1-5' };
         }
+      }
+      break;
+
+    case 'forage':
+      // No params required - forage at current location
+      break;
+
+    case 'public_work':
+      // taskType is optional
+      if (params.taskType !== undefined) {
+        if (!['road_maintenance', 'resource_survey', 'shelter_cleanup'].includes(params.taskType as string)) {
+          return { valid: false, error: 'public_work taskType must be road_maintenance, resource_survey, or shelter_cleanup' };
+        }
+      }
+      break;
+
+    case 'signal':
+      if (typeof params.message !== 'string' || params.message.length < 1 || params.message.length > 200) {
+        return { valid: false, error: 'signal message must be 1-200 characters' };
+      }
+      if (typeof params.intensity !== 'number' || params.intensity < 1 || params.intensity > 5) {
+        return { valid: false, error: 'signal intensity must be 1-5' };
       }
       break;
 
@@ -331,12 +357,22 @@ export function getFallbackDecision(
   agentY?: number,
   inventory?: Array<{ type: string; quantity: number }>,
   nearbyResourceSpawns?: Array<{ x: number; y: number; resourceType: string; currentAmount: number }>,
-  nearbyShelters?: Array<{ x: number; y: number }>
+  nearbyShelters?: Array<{ x: number; y: number }>,
+  // Social context (Phase 1.2: Enable social fallbacks)
+  nearbyJobOffers?: Array<{ id: string; salary: number; employerId: string }>,
+  activeEmployments?: Array<{ id: string; role: 'worker' | 'employer'; ticksWorked: number; ticksRequired: number }>,
+  nearbyAgents?: Array<{ id: string }>
 ): AgentDecision {
   const hasFood = inventory?.some((i) => i.type === 'food' && i.quantity > 0) ?? false;
+  const foodQuantity = inventory?.find((i) => i.type === 'food')?.quantity ?? 0;
   const currentX = agentX ?? 50;
   const currentY = agentY ?? 50;
   const atShelter = nearbyShelters?.some((s) => s.x === currentX && s.y === currentY) ?? false;
+
+  // Social context helpers
+  const hasActiveWorkerJob = activeEmployments?.some((e) => e.role === 'worker' && e.ticksWorked < e.ticksRequired) ?? false;
+  const activeWorkerJob = activeEmployments?.find((e) => e.role === 'worker' && e.ticksWorked < e.ticksRequired);
+  const hasNearbyAgents = (nearbyAgents?.length ?? 0) > 0;
 
   // Priority 1: Consume food if hungry AND have food
   if (hunger < 50 && hasFood) {
@@ -370,7 +406,23 @@ export function getFallbackDecision(
     }
   }
 
-  // Priority 4: If hungry, move towards nearest food spawn
+  // Priority 4: If hungry and no food spawns nearby, FORAGE (always works anywhere!)
+  if (hunger < 40 && !hasFood) {
+    // Check if there's a food spawn here first
+    const foodSpawnHere = nearbyResourceSpawns?.find(
+      (s) => s.x === currentX && s.y === currentY && s.resourceType === 'food' && s.currentAmount > 0
+    );
+    if (!foodSpawnHere) {
+      // No food spawn here - try foraging (60% success, but always available!)
+      return {
+        action: 'forage',
+        params: {},
+        reasoning: 'Fallback: hungry with no food spawn nearby, foraging',
+      };
+    }
+  }
+
+  // Priority 5: If hungry, move towards nearest food spawn
   if (hunger < 40 && nearbyResourceSpawns) {
     const foodSpawns = nearbyResourceSpawns.filter((s) => s.resourceType === 'food' && s.currentAmount > 0);
     if (foodSpawns.length > 0) {
@@ -391,7 +443,47 @@ export function getFallbackDecision(
     }
   }
 
-  // Priority 5: Rest if exhausted
+  // ===== SOCIAL ACTIONS (Phase 1.2) =====
+
+  // Priority 5.5: Work if have active employment (SOCIAL - steady income)
+  if (hasActiveWorkerJob && energy >= 15 && activeWorkerJob) {
+    return {
+      action: 'work',
+      params: {},
+      reasoning: `Fallback: working on employment contract (${activeWorkerJob.ticksWorked}/${activeWorkerJob.ticksRequired} ticks)`,
+    };
+  }
+
+  // Priority 5.6: Accept best job offer if poor and offers available (SOCIAL)
+  if (balance < 30 && nearbyJobOffers && nearbyJobOffers.length > 0 && energy >= 20) {
+    // Pick the best salary job offer
+    const bestOffer = nearbyJobOffers.reduce((a, b) => (a.salary > b.salary ? a : b));
+    return {
+      action: 'accept_job',
+      params: { jobOfferId: bestOffer.id },
+      reasoning: `Fallback: poor, accepting job offer for ${bestOffer.salary} CITY`,
+    };
+  }
+
+  // Priority 5.7: Trade surplus food if have 3+ and nearby agents (SOCIAL)
+  if (foodQuantity >= 3 && hasNearbyAgents && nearbyAgents && nearbyAgents.length > 0) {
+    const targetAgent = nearbyAgents[0]; // Pick first nearby agent
+    return {
+      action: 'trade',
+      params: {
+        targetAgentId: targetAgent.id,
+        offeringItemType: 'food',
+        offeringQuantity: 1,
+        requestingItemType: 'CITY',
+        requestingQuantity: 8, // Fair price for food
+      },
+      reasoning: 'Fallback: surplus food, trading with nearby agent',
+    };
+  }
+
+  // ===== END SOCIAL ACTIONS =====
+
+  // Priority 6: Rest if exhausted
   if (energy < 30) {
     return {
       action: 'sleep',
@@ -400,16 +492,25 @@ export function getFallbackDecision(
     };
   }
 
-  // Priority 6: Work if poor (no location required)
-  if (balance < 50 && energy >= 20) {
+  // Priority 7: Public work if poor AND at shelter (earns 15 CITY, always available!)
+  if (balance < 50 && energy >= 20 && atShelter) {
     return {
-      action: 'work',
-      params: { duration: 2 },
-      reasoning: 'Fallback: low funds, working',
+      action: 'public_work',
+      params: {},
+      reasoning: 'Fallback: low funds at shelter, doing public work',
     };
   }
 
-  // Priority 7: Random exploration if healthy
+  // Priority 8: If poor but not at shelter, try foraging for food to sell
+  if (balance < 30 && energy >= 10 && !atShelter) {
+    return {
+      action: 'forage',
+      params: {},
+      reasoning: 'Fallback: poor and not at shelter, foraging for resources',
+    };
+  }
+
+  // Priority 9: Random exploration if healthy
   if (energy >= 10) {
     // Random direction
     const directions = [

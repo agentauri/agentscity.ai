@@ -142,14 +142,15 @@ describe('Orchestrator Fallback Decision', () => {
       expect(decision.params).toEqual({ itemType: 'food', quantity: 1 });
     });
 
-    test('hungry agent without shelter works instead of buying', () => {
-      // Agent is hungry but NOT at a shelter - should work or explore
+    test('hungry agent without shelter forages instead of buying', () => {
+      // Agent is hungry but NOT at a shelter - should forage for food
       const observation = createMockObservation({ hunger: 20, balance: 100 });
       const decision = createFallbackDecision(observation);
 
       expect(decision).toBeDefined();
-      // Without shelter, agent can't buy, so it will explore (move)
-      expect(decision.action).toBe('move');
+      // Without shelter and no food, agent forages (60% chance of finding food)
+      expect(decision.action).toBe('forage');
+      expect(decision.params).toEqual({});
     });
 
     test('creates valid decision for exhausted agent', () => {
@@ -161,13 +162,30 @@ describe('Orchestrator Fallback Decision', () => {
       expect(decision.params).toEqual({ duration: 3 });
     });
 
-    test('creates valid decision for poor agent', () => {
-      const observation = createMockObservation({ balance: 30, energy: 50 });
+    test('creates valid decision for poor agent not at shelter', () => {
+      // Poor agent not at shelter forages to find resources
+      const observation = createMockObservation({ balance: 25, energy: 50 });
       const decision = createFallbackDecision(observation);
 
       expect(decision).toBeDefined();
-      expect(decision.action).toBe('work');
-      expect(decision.params).toEqual({ duration: 2 });
+      expect(decision.action).toBe('forage');
+      expect(decision.params).toEqual({});
+    });
+
+    test('creates valid decision for poor agent at shelter', () => {
+      // Poor agent at shelter does public work
+      const observation = createMockObservation({
+        balance: 30,
+        energy: 50,
+        x: 50,
+        y: 50,
+        nearbyShelters: [{ id: 'shelter-1', x: 50, y: 50, canSleep: true }],
+      });
+      const decision = createFallbackDecision(observation);
+
+      expect(decision).toBeDefined();
+      expect(decision.action).toBe('public_work');
+      expect(decision.params).toEqual({});
     });
 
     test('creates exploration decision for healthy agent', () => {

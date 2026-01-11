@@ -14,13 +14,42 @@ import type { Agent } from '../../db/schema';
 import { getResourceSpawnsAtPosition, harvestResource } from '../../db/queries/world';
 import { addToInventory } from '../../db/queries/inventory';
 import { storeMemory } from '../../db/queries/memories';
+import { getAliveAgents } from '../../db/queries/agents';
+import { CONFIG as GLOBAL_CONFIG } from '../../config';
 
-// Gather configuration
+// Gather configuration (use global config values)
 const CONFIG = {
-  energyCostPerUnit: 1, // Energy cost per resource unit gathered
+  energyCostPerUnit: GLOBAL_CONFIG.actions.gather.energyCostPerUnit,
   hungerCostPerUnit: 0.3, // Hunger cost per resource unit gathered
-  maxGatherPerAction: 5, // Maximum units that can be gathered at once
+  maxGatherPerAction: GLOBAL_CONFIG.actions.gather.maxPerAction,
 } as const;
+
+/**
+ * Count other agents at the same position for cooperation bonus
+ */
+async function countAgentsAtPosition(agentId: string, x: number, y: number): Promise<number> {
+  const coopConfig = GLOBAL_CONFIG.cooperation;
+  if (!coopConfig.enabled) return 0;
+
+  const aliveAgents = await getAliveAgents();
+  return aliveAgents.filter((a) => a.id !== agentId && a.x === x && a.y === y).length;
+}
+
+/**
+ * Calculate cooperation multiplier for gathering
+ * More agents at the same position = better efficiency (up to max cap)
+ */
+function getCooperationMultiplier(otherAgentsCount: number): number {
+  const coopConfig = GLOBAL_CONFIG.cooperation;
+  if (!coopConfig.enabled || otherAgentsCount === 0) return 1.0;
+
+  const multiplierPerAgent = coopConfig.gather.efficiencyMultiplierPerAgent;
+  const maxMultiplier = coopConfig.gather.maxEfficiencyMultiplier;
+
+  // Calculate: 1 + (otherAgents * (multiplier - 1)), capped at max
+  const bonus = otherAgentsCount * (multiplierPerAgent - 1);
+  return Math.min(1 + bonus, maxMultiplier);
+}
 
 // Map resource types to inventory item types
 const RESOURCE_TO_ITEM: Record<string, string> = {
@@ -100,11 +129,16 @@ export async function handleGather(
     };
   }
 
+  // Apply cooperation bonus (more agents nearby = better efficiency)
+  const otherAgentsHere = await countAgentsAtPosition(agent.id, agent.x, agent.y);
+  const cooperationMultiplier = getCooperationMultiplier(otherAgentsHere);
+  const bonusGathered = Math.floor(actualGathered * cooperationMultiplier);
+
   // Convert resource type to inventory item type
   const itemType = RESOURCE_TO_ITEM[targetSpawn.resourceType] || targetSpawn.resourceType;
 
-  // Add to inventory
-  await addToInventory(agent.id, itemType, actualGathered);
+  // Add to inventory (with cooperation bonus applied)
+  await addToInventory(agent.id, itemType, bonusGathered);
 
   // Calculate actual energy and hunger cost (based on what was actually gathered)
   const actualEnergyCost = CONFIG.energyCostPerUnit * actualGathered;
@@ -112,11 +146,14 @@ export async function handleGather(
   const newEnergy = agent.energy - actualEnergyCost;
   const newHunger = Math.max(0, agent.hunger - actualHungerCost);
 
-  // Store memory of gathering
+  // Store memory of gathering (include cooperation bonus info if applicable)
+  const coopNote = bonusGathered > actualGathered
+    ? ` (cooperation bonus: +${bonusGathered - actualGathered})`
+    : '';
   await storeMemory({
     agentId: agent.id,
     type: 'action',
-    content: `Gathered ${actualGathered}x ${targetSpawn.resourceType} at (${agent.x}, ${agent.y}). Spawn has ${targetSpawn.currentAmount - actualGathered} remaining.`,
+    content: `Gathered ${bonusGathered}x ${targetSpawn.resourceType} at (${agent.x}, ${agent.y})${coopNote}. Spawn has ${targetSpawn.currentAmount - actualGathered} remaining.`,
     importance: 5,
     emotionalValence: 0.4,
     x: agent.x,
@@ -142,7 +179,10 @@ export async function handleGather(
           resourceType: targetSpawn.resourceType,
           itemType,
           amountRequested: quantity,
-          amountGathered: actualGathered,
+          amountGathered: bonusGathered, // With cooperation bonus applied
+          baseAmountGathered: actualGathered,
+          cooperationMultiplier,
+          otherAgentsNearby: otherAgentsHere,
           spawnRemainingAmount: targetSpawn.currentAmount - actualGathered,
           energyCost: actualEnergyCost,
           hungerCost: actualHungerCost,

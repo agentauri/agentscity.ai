@@ -948,6 +948,54 @@ export const tokenBudgets = pgTable('token_budgets', {
 ]);
 
 // =============================================================================
+// PROMPT LOGS (Phase 2: Live Inspector)
+// =============================================================================
+
+export const promptLogs = pgTable('prompt_logs', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Agent and timing
+  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  tick: bigint('tick', { mode: 'number' }).notNull(),
+
+  // Prompts
+  systemPrompt: text('system_prompt').notNull(),
+  observationPrompt: text('observation_prompt').notNull(),
+  fullPrompt: text('full_prompt').notNull(),
+
+  // Decision result
+  decision: jsonb('decision').$type<{
+    action: string;
+    params?: Record<string, unknown>;
+    reasoning?: string;
+  }>(),
+  rawResponse: text('raw_response'),
+
+  // Metadata
+  llmType: varchar('llm_type', { length: 50 }).notNull(),
+  personality: varchar('personality', { length: 50 }),
+  promptMode: varchar('prompt_mode', { length: 20 }).notNull(), // 'prescriptive' | 'emergent'
+  safetyLevel: varchar('safety_level', { length: 20 }).notNull(), // 'standard' | 'minimal' | 'none'
+
+  // Performance metrics
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  processingTimeMs: integer('processing_time_ms'),
+  usedFallback: boolean('used_fallback').notNull().default(false),
+  usedCache: boolean('used_cache').notNull().default(false),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('prompt_logs_tenant_idx').on(table.tenantId),
+  index('prompt_logs_agent_idx').on(table.agentId),
+  index('prompt_logs_tick_idx').on(table.tick),
+  index('prompt_logs_agent_tick_idx').on(table.agentId, table.tick),
+]);
+
+// =============================================================================
 // Type exports
 // =============================================================================
 
@@ -1038,3 +1086,7 @@ export type NewEmployment = typeof employments.$inferInsert;
 // Backwards compatibility alias (for migration period)
 export type Location = Shelter;
 export type NewLocation = NewShelter;
+
+// Phase 2: Prompt Inspector types
+export type PromptLog = typeof promptLogs.$inferSelect;
+export type NewPromptLog = typeof promptLogs.$inferInsert;

@@ -70,10 +70,10 @@ export const CONFIG = {
   // ---------------------------------------------------------------------------
   actions: {
     move: {
-      /** Energy cost per tile moved (increased for survival pressure) */
-      energyCost: env('MOVE_ENERGY_COST', 2),
-      /** Hunger cost per tile moved (new: movement makes you hungry) */
-      hungerCost: env('MOVE_HUNGER_COST', 0.5),
+      /** Energy cost per tile moved (reduced for better exploration) */
+      energyCost: env('MOVE_ENERGY_COST', 1),
+      /** Hunger cost per tile moved (reduced for survival) */
+      hungerCost: env('MOVE_HUNGER_COST', 0.2),
       /** Extra cost multiplier for consecutive moves (discourages spam) */
       consecutivePenalty: env('MOVE_CONSECUTIVE_PENALTY', 0.5),
       /** Scent duration in ticks (stigmergy) */
@@ -94,6 +94,17 @@ export const CONFIG = {
       energyCostPerUnit: env('GATHER_ENERGY_COST', 1),
       /** Maximum units that can be gathered per action */
       maxPerAction: env('GATHER_MAX_PER_ACTION', 5),
+    },
+
+    forage: {
+      /** Energy cost for foraging (increased to discourage solo survival) */
+      energyCost: env('FORAGE_ENERGY_COST', 3),
+      /** Base success rate (0-1, reduced to make cooperation more attractive) */
+      baseSuccessRate: env('FORAGE_SUCCESS_RATE', 0.35),
+      /** Food yield on success (low but free) */
+      foodYield: env('FORAGE_FOOD_YIELD', 1),
+      /** Cooldown in ticks before can forage again at same location (increased) */
+      cooldownTicks: env('FORAGE_COOLDOWN', 5),
     },
 
     work: {
@@ -127,20 +138,20 @@ export const CONFIG = {
     },
 
     consume: {
-      /** Item effects on needs (fixed, not configurable) */
+      /** Item effects on needs (balanced for survival) */
       effects: {
-        food: { hunger: 30 },
-        water: { energy: 10 },
-        medicine: { health: 30 },
-        battery: { energy: 20 },
+        food: { hunger: 50 },
+        water: { energy: 15 },
+        medicine: { health: 40 },
+        battery: { energy: 30 },
       } as Record<string, { hunger?: number; energy?: number; health?: number }>,
     },
 
     trade: {
       /** Maximum distance for trade */
       maxDistance: env('TRADE_MAX_DISTANCE', 3),
-      /** Trust score change on successful trade */
-      trustGainOnSuccess: env('TRADE_TRUST_GAIN', 5),
+      /** Trust score change on successful trade (increased 3x to incentivize trading) */
+      trustGainOnSuccess: env('TRADE_TRUST_GAIN', 15),
       /** Trust score change on failed/rejected trade */
       trustLossOnFailure: env('TRADE_TRUST_LOSS', -2),
     },
@@ -271,13 +282,65 @@ export const CONFIG = {
   },
 
   // ---------------------------------------------------------------------------
+  // Public Works (Economy Bootstrap)
+  // ---------------------------------------------------------------------------
+  publicWorks: {
+    /** Enable public works system to bootstrap economy */
+    enabled: envBool('PUBLIC_WORKS_ENABLED', true),
+    /** Payment for completing public work tasks (reduced to make jobs more attractive) */
+    paymentPerTask: env('PUBLIC_WORKS_PAYMENT', 8),
+    /** Maximum concurrent public work jobs */
+    maxConcurrentJobs: env('PUBLIC_WORKS_MAX_JOBS', 5),
+    /** Ticks required to complete a public work task (increased to make jobs more attractive) */
+    ticksPerTask: env('PUBLIC_WORKS_TICKS', 4),
+    /** Energy cost per tick of public work */
+    energyCostPerTick: env('PUBLIC_WORKS_ENERGY_COST', 1),
+    /** Types of public work available */
+    taskTypes: ['road_maintenance', 'resource_survey', 'shelter_cleanup'] as const,
+  },
+
+  // ---------------------------------------------------------------------------
+  // Cooperation Bonuses (Phase 3: Incentivize Group Behavior)
+  // ---------------------------------------------------------------------------
+  cooperation: {
+    /** Enable cooperation bonus system */
+    enabled: envBool('COOPERATION_ENABLED', true),
+
+    /** Gather cooperation bonuses */
+    gather: {
+      /** Efficiency multiplier per additional agent at same location (+15% per agent) */
+      efficiencyMultiplierPerAgent: env('GATHER_COOP_MULTIPLIER', 1.15),
+      /** Maximum efficiency multiplier (cap at +45%) */
+      maxEfficiencyMultiplier: env('GATHER_COOP_MAX_MULTIPLIER', 1.45),
+    },
+
+    /** Work cooperation bonuses */
+    work: {
+      /** Bonus multiplier when working near other agents (+20%) */
+      nearbyWorkerBonus: env('WORK_COOP_BONUS', 0.2),
+      /** Radius to detect nearby workers */
+      nearbyWorkerRadius: env('WORK_COOP_RADIUS', 3),
+    },
+
+    /** Solo penalties (discourage isolation) */
+    solo: {
+      /** Forage success rate modifier when alone (-20%) */
+      forageSuccessRateModifier: env('SOLO_FORAGE_MODIFIER', 0.8),
+      /** Public work payment modifier when alone (-30%) */
+      publicWorkPaymentModifier: env('SOLO_PUBLIC_WORK_MODIFIER', 0.7),
+      /** Radius to determine if agent is alone */
+      aloneRadius: env('SOLO_ALONE_RADIUS', 5),
+    },
+  },
+
+  // ---------------------------------------------------------------------------
   // Needs Decay
   // ---------------------------------------------------------------------------
   needs: {
-    /** Hunger decay per tick */
-    hungerDecay: env('NEEDS_HUNGER_DECAY', 1),
-    /** Base energy decay per tick */
-    energyDecay: env('NEEDS_ENERGY_DECAY', 0.5),
+    /** Hunger decay per tick (reduced for longer survival) */
+    hungerDecay: env('NEEDS_HUNGER_DECAY', 0.6),
+    /** Base energy decay per tick (reduced for longer survival) */
+    energyDecay: env('NEEDS_ENERGY_DECAY', 0.3),
 
     /** Low hunger threshold (triggers extra energy drain) */
     lowHungerThreshold: env('NEEDS_LOW_HUNGER', 20),
@@ -334,12 +397,12 @@ export const CONFIG = {
   // Agent Spawning (Scarcity Mode)
   // ---------------------------------------------------------------------------
   agent: {
-    /** Starting balance for new agents (reduced for scarcity) */
-    startingBalance: env('AGENT_STARTING_BALANCE', 50),
-    /** Starting hunger for new agents (reduced for urgency) */
-    startingHunger: env('AGENT_STARTING_HUNGER', 60),
-    /** Starting energy for new agents (reduced for urgency) */
-    startingEnergy: env('AGENT_STARTING_ENERGY', 60),
+    /** Starting balance for new agents (increased for economy bootstrap) */
+    startingBalance: env('AGENT_STARTING_BALANCE', 100),
+    /** Starting hunger for new agents (comfortable start) */
+    startingHunger: env('AGENT_STARTING_HUNGER', 80),
+    /** Starting energy for new agents (comfortable start) */
+    startingEnergy: env('AGENT_STARTING_ENERGY', 80),
     /** Starting health for new agents */
     startingHealth: env('AGENT_STARTING_HEALTH', 100),
   },
@@ -354,8 +417,8 @@ export const CONFIG = {
     recentCount: env('MEMORY_RECENT_COUNT', 5),
     /** Decay rate for memory importance (per tick) */
     importanceDecay: env('MEMORY_IMPORTANCE_DECAY', 0.01),
-    /** Trust score decay per tick without interaction */
-    trustDecayPerTick: env('TRUST_DECAY_PER_TICK', 0.1),
+    /** Trust score decay per tick without interaction (reduced 5x to make relationships persist) */
+    trustDecayPerTick: env('TRUST_DECAY_PER_TICK', 0.02),
 
     // Phase 5: RAG-lite Memory Retrieval
     /**
@@ -383,10 +446,10 @@ export const CONFIG = {
   // Resource Spawns
   // ---------------------------------------------------------------------------
   resources: {
-    /** Default regeneration rate per tick */
-    defaultRegenRate: env('RESOURCE_REGEN_RATE', 1),
+    /** Default regeneration rate per tick (increased for sustainability) */
+    defaultRegenRate: env('RESOURCE_REGEN_RATE', 1.5),
     /** Default maximum amount per spawn */
-    defaultMaxAmount: env('RESOURCE_MAX_AMOUNT', 10),
+    defaultMaxAmount: env('RESOURCE_MAX_AMOUNT', 15),
   },
 
   // ---------------------------------------------------------------------------
@@ -418,7 +481,7 @@ export const CONFIG = {
     /** Comma-separated list of allowed origins (use * for all in dev) */
     allowedOrigins: envString(
       'CORS_ALLOWED_ORIGINS',
-      'http://localhost:5173,http://localhost:3000'
+      'http://localhost:5173,http://localhost:5174,http://localhost:3000'
     )
       .split(',')
       .map((o) => o.trim())
@@ -500,6 +563,18 @@ export const CONFIG = {
   },
 
   // ---------------------------------------------------------------------------
+  // Prompt Inspector (Phase 2: Live Inspector)
+  // ---------------------------------------------------------------------------
+  promptInspector: {
+    /** Enable prompt logging to database (default: false for performance) */
+    enabled: envBool('PROMPT_LOGGING_ENABLED', false),
+    /** Maximum prompt logs to keep per agent (oldest deleted when exceeded) */
+    maxLogsPerAgent: env('PROMPT_LOG_MAX_PER_AGENT', 100),
+    /** Retention period in ticks (logs older than this are cleaned up) */
+    retentionTicks: env('PROMPT_LOG_RETENTION_TICKS', 1000),
+  },
+
+  // ---------------------------------------------------------------------------
   // Telemetry (OpenTelemetry)
   // ---------------------------------------------------------------------------
   telemetry: {
@@ -527,6 +602,7 @@ export type LLMConfig = typeof CONFIG.llm;
 export type LLMCacheConfig = typeof CONFIG.llm.cache;
 export type MemoryConfig = typeof CONFIG.memory;
 export type ExperimentConfig = typeof CONFIG.experiment;
+export type PromptInspectorConfig = typeof CONFIG.promptInspector;
 export type TelemetryConfig = typeof CONFIG.telemetry;
 
 // =============================================================================

@@ -19,6 +19,7 @@ export interface ExternalAgentConfig {
 
 /**
  * Create fallback decision for external agents
+ * Includes social context for employment and trading decisions
  */
 function createFallbackDecision(observation: AgentObservation): AgentDecision {
   return getFallbackDecision(
@@ -29,7 +30,11 @@ function createFallbackDecision(observation: AgentObservation): AgentDecision {
     observation.self.y,
     observation.inventory,
     observation.nearbyResourceSpawns,
-    observation.nearbyShelters
+    observation.nearbyShelters,
+    // Social context (Phase 1.2)
+    observation.nearbyJobOffers,
+    observation.activeEmployments,
+    observation.nearbyAgents
   );
 }
 

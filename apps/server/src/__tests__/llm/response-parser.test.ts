@@ -305,18 +305,46 @@ describe('getFallbackDecision', () => {
   });
 
   describe('economy priority', () => {
-    test('works when poor but has energy', () => {
-      const decision = getFallbackDecision(80, 50, 30); // fed, moderate energy, poor
+    test('forages when poor but not at shelter', () => {
+      // Poor agent not at shelter should forage to find resources
+      const decision = getFallbackDecision(
+        80, // hunger (fed)
+        50, // energy (moderate)
+        25, // balance (poor, < 30 triggers foraging)
+        50, // x
+        50, // y
+        [], // no inventory
+        [], // no resource spawns
+        [] // not at shelter
+      );
 
-      expect(decision.action).toBe('work');
-      expect(decision.params).toEqual({ duration: 2 });
+      expect(decision.action).toBe('forage');
+      expect(decision.params).toEqual({});
     });
 
-    test('works when balance is exactly 50', () => {
-      // At balance 50, should NOT work (only if < 50)
+    test('does public_work when poor and at shelter', () => {
+      // Poor agent at shelter should do public work
+      const decision = getFallbackDecision(
+        80, // hunger (fed)
+        50, // energy (moderate)
+        30, // balance (poor, < 50 triggers public work)
+        50, // x
+        50, // y
+        [], // no inventory
+        [], // no resource spawns
+        [{ x: 50, y: 50 }] // at shelter
+      );
+
+      expect(decision.action).toBe('public_work');
+      expect(decision.params).toEqual({});
+    });
+
+    test('does not do economy actions when balance is at threshold', () => {
+      // At balance 50, should explore instead of economy actions
       const decision = getFallbackDecision(80, 50, 50);
 
-      expect(decision.action).not.toBe('work');
+      expect(decision.action).not.toBe('forage');
+      expect(decision.action).not.toBe('public_work');
     });
   });
 
@@ -376,9 +404,9 @@ describe('getFallbackDecision', () => {
     test('all decisions have reasoning string', () => {
       const scenarios = [
         [20, 80, 100], // hungry with money
-        [40, 80, 5],   // hungry without money
+        [40, 80, 5],   // hungry without money (will forage)
         [80, 20, 100], // exhausted
-        [80, 50, 30],  // poor
+        [80, 50, 25],  // poor (will forage)
         [80, 80, 100], // all good
         [80, 5, 100],  // very low energy
       ];

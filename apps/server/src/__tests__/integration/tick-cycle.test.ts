@@ -81,7 +81,7 @@ describe('Tick Cycle - Needs Decay', () => {
     const result = await applyNeedsDecay(agent, tick);
 
     expect(result.newState.health).toBeLessThan(100);
-    expect(result.newState.hunger).toBe(4); // 5 - 1 = 4
+    expect(result.newState.hunger).toBe(4.4); // 5 - 0.6 = 4.4 (from global config)
   });
 
   test('low energy causes health damage', async () => {

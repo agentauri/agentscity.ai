@@ -30,12 +30,14 @@ import {
   markSpanError,
   createTracedLogger,
 } from '../../telemetry';
+import { logPrompt, isPromptLoggingEnabled } from '../prompt-logger';
 
 // Traced logger for LLM operations
 const logger = createTracedLogger('LLM');
 
 /**
  * Create fallback decision (scientific model - no location checks)
+ * Includes social context for employment and trading decisions
  */
 function createFallbackDecision(observation: AgentObservation): AgentDecision {
   return getFallbackDecision(
@@ -46,7 +48,11 @@ function createFallbackDecision(observation: AgentObservation): AgentDecision {
     observation.self.y,
     observation.inventory,
     observation.nearbyResourceSpawns,
-    observation.nearbyShelters
+    observation.nearbyShelters,
+    // Social context (Phase 1.2)
+    observation.nearbyJobOffers,
+    observation.activeEmployments,
+    observation.nearbyAgents
   );
 }
 
@@ -162,6 +168,25 @@ export abstract class BaseLLMAdapter implements LLMAdapter {
         addLLMMetrics(span, { durationMs, usedFallback: false });
         markSpanSuccess(span);
         span.end();
+
+        // Log cache hit for Live Inspector (still useful to see what decisions were made)
+        if (isPromptLoggingEnabled()) {
+          // Build prompt just for logging (we don't actually send it to LLM)
+          const prompt = await buildFinalPromptWithMemories(agentId, observation, personality);
+          logPrompt({
+            agentId,
+            tick: observation.tick,
+            observation,
+            personality,
+            llmType: this.type,
+            fullPrompt: prompt,
+            decision: cachedDecision,
+            processingTimeMs: durationMs,
+            usedFallback: false,
+            usedCache: true,
+          }).catch((err) => logger.error('Failed to log prompt:', err));
+        }
+
         return cachedDecision;
       }
 
@@ -218,6 +243,26 @@ export abstract class BaseLLMAdapter implements LLMAdapter {
         span.setAttribute('llm.decision_action', decision.action);
         markSpanSuccess(span);
         span.end();
+
+        // Log prompt for Live Inspector (async, non-blocking)
+        if (isPromptLoggingEnabled()) {
+          logPrompt({
+            agentId,
+            tick: observation.tick,
+            observation,
+            personality,
+            llmType: this.type,
+            fullPrompt: prompt,
+            decision,
+            rawResponse: responseText,
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            processingTimeMs: totalDurationMs,
+            usedFallback: false,
+            usedCache: false,
+          }).catch((err) => logger.error('Failed to log prompt:', err));
+        }
+
         return decision;
       }
 
@@ -227,7 +272,29 @@ export abstract class BaseLLMAdapter implements LLMAdapter {
       addLLMMetrics(span, { usedFallback: true });
       markSpanSuccess(span);
       span.end();
-      return createFallbackDecision(observation);
+
+      const fallbackDecision = createFallbackDecision(observation);
+
+      // Log fallback for Live Inspector
+      if (isPromptLoggingEnabled()) {
+        logPrompt({
+          agentId,
+          tick: observation.tick,
+          observation,
+          personality,
+          llmType: this.type,
+          fullPrompt: prompt,
+          decision: fallbackDecision,
+          rawResponse: responseText,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          processingTimeMs: totalDurationMs,
+          usedFallback: true,
+          usedCache: false,
+        }).catch((err) => logger.error('Failed to log prompt:', err));
+      }
+
+      return fallbackDecision;
     } catch (error) {
       const durationMs = Date.now() - startTime;
       logger.error(`${this.name}: Error during decision`, error);

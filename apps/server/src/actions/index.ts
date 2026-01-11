@@ -10,6 +10,8 @@ import { handleConsume } from './handlers/consume';
 import { handleSleep } from './handlers/sleep';
 import { handleWork } from './handlers/work';
 import { handleGather } from './handlers/gather';
+import { handleForage } from './handlers/forage';
+import { handlePublicWork } from './handlers/public-work';
 import { handleTrade } from './handlers/trade';
 // Phase 1: Emergence Observation
 import { handleClaim } from './handlers/claim';
@@ -45,6 +47,8 @@ handlers.set('consume', handleConsume as ActionHandler);
 handlers.set('sleep', handleSleep as ActionHandler);
 handlers.set('work', handleWork as ActionHandler);
 handlers.set('gather', handleGather as ActionHandler);
+handlers.set('forage', handleForage as ActionHandler);
+handlers.set('public_work', handlePublicWork as ActionHandler);
 handlers.set('trade', handleTrade as ActionHandler);
 // Phase 1: Emergence Observation
 handlers.set('claim', handleClaim as ActionHandler);

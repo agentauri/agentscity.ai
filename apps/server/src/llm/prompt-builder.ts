@@ -112,6 +112,8 @@ Respond with ONLY a JSON object. No other text. Format:
 ## Available Actions
 - move: Move to adjacent cell. Params: { "toX": number, "toY": number }
 - gather: Collect resources from a spawn point (must be at spawn location). Params: { "resourceType": "food"|"energy"|"material", "quantity": 1-5 }
+- forage: Search for food anywhere (low yield but FREE, no spawn required). Params: {} (no params needed)
+- public_work: Do public work at a shelter for CITY payment (always available!). Params: { "taskType"?: "road_maintenance"|"resource_survey"|"shelter_cleanup" }
 - buy: Purchase items with CITY currency. REQUIRES being at a SHELTER! Params: { "itemType": "food"|"water"|"medicine", "quantity": number }
 - consume: Use items FROM YOUR INVENTORY to restore needs. REQUIRES having items first! Params: { "itemType": "food"|"water"|"medicine" }
 - sleep: Rest to restore energy. Params: { "duration": 1-10 }
@@ -159,13 +161,19 @@ You can also BECOME AN EMPLOYER:
 ## Survival Strategy
 PRIORITY ORDER when deciding what to do:
 1. If hunger < 50 AND you have food in inventory -> CONSUME food
-2. If hunger < 50 AND no food AND you have CITY >= 10 -> BUY food, then consume next tick
-3. If hunger < 50 AND no food AND CITY < 10 -> MOVE to nearest food resource spawn, then GATHER (FREE!)
-4. If energy < 30 AND not already sleeping -> SLEEP to restore energy
-5. If you have an active employment -> WORK to fulfill contract and earn CITY
-6. If no employment AND job offers available -> ACCEPT_JOB to start earning
-7. If no employment AND no job offers AND have CITY -> OFFER_JOB to hire others
-8. Otherwise -> GATHER resources to survive (always free)
+2. If hunger < 50 AND no food AND you have CITY >= 10 AND at shelter -> BUY food
+3. If hunger < 50 AND no food AND at resource spawn -> GATHER food (FREE!)
+4. If hunger < 50 AND no food AND not at spawn -> FORAGE anywhere (35% chance - low, better to find jobs!)
+5. If energy < 30 AND not already sleeping -> SLEEP to restore energy
+6. If you have an active employment -> WORK to fulfill contract and earn CITY (BEST income!)
+7. If no employment AND job offers available -> ACCEPT_JOB to start earning (more profitable than solo!)
+8. If at shelter AND need CITY -> PUBLIC_WORK (fallback, only 8 CITY per task and takes 4 ticks)
+9. If surplus food (3+) AND nearby agents -> TRADE food for CITY (builds trust!)
+10. Otherwise -> explore, gather resources, or look for job offers
+
+COOPERATION BONUS: Working near others gives better results!
+- Gathering with others nearby = more resources
+- Solo survival (forage/public_work alone) is LESS efficient
 
 CRITICAL RULES:
 - Do NOT try to CONSUME if you have no food in inventory!
@@ -173,14 +181,18 @@ CRITICAL RULES:
 - Do NOT try to WORK without an active employment contract!
 - WORK no longer creates money from nowhere - you MUST have a job first!
 
-GATHER vs BUY:
-- GATHER is FREE but requires moving to a resource spawn first
-- BUY costs 10 CITY but works anywhere at a shelter
-- When low on money, ALWAYS prefer GATHER over trying to BUY!
+GETTING FOOD (pick based on situation):
+- GATHER: FREE but requires being at a resource spawn
+- FORAGE: FREE anywhere, 60% success, yields 1 food
+- BUY: Costs 10 CITY, requires being at a shelter
+
+GETTING CITY (pick based on situation):
+- PUBLIC_WORK: At any shelter, always available, earns 15 CITY per task (2 ticks)
+- WORK: Requires having an employment contract with another agent
 
 ITEM EFFECTS:
-- Food: +30 hunger (buy for 10 CITY or gather FREE from food spawns)
-- Water: +10 energy (buy for 5 CITY)
+- Food: +50 hunger (buy for 10 CITY or gather/forage FREE)
+- Water: +15 energy (buy for 5 CITY)
 - Sleep: +5 energy per tick (free, but don't sleep if already sleeping)
 
 DEATH CONDITIONS:

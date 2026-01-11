@@ -12,7 +12,7 @@
 import { useEffect, useCallback, useState } from 'react';
 import { useSSE } from './hooks/useSSE';
 import { useWorldStore, useAgents, useEvents } from './stores/world';
-import { useEditorStore, useAppMode, useIsAnalyticsMode, useIsReplayMode, useIsPaused, useViewMode } from './stores/editor';
+import { useEditorStore, useAppMode, useIsAnalyticsMode, useIsReplayMode, useIsPromptsMode, useIsPaused, useViewMode } from './stores/editor';
 import { useWorldControl } from './hooks/useWorldControl';
 import { Layout } from './components/Layout';
 import { ScientificCanvas } from './components/Canvas/ScientificCanvas';
@@ -26,6 +26,7 @@ import { ModeControls, ViewToggle, EventFilters } from './components/Controls';
 import { MobileNav, type MobileView } from './components/MobileNav';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { ReplayPage } from './pages/ReplayPage';
+import { PromptsPage } from './pages/PromptsPage';
 import { useReplayStore } from './stores/replay';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SocialGraphView, SocialGraphButton } from './components/SocialGraph';
@@ -41,6 +42,7 @@ export default function App() {
   const viewMode = useViewMode();
   const isAnalyticsMode = useIsAnalyticsMode();
   const isReplayMode = useIsReplayMode();
+  const isPromptsMode = useIsPromptsMode();
   const isPaused = useIsPaused();
   const { enterReplayMode, exitReplayMode } = useReplayStore();
   const [hasSynced, setHasSynced] = useState(false);
@@ -236,6 +238,17 @@ export default function App() {
           <SocialGraphButton />
         )}
 
+        {/* Prompts Gallery button */}
+        <button
+          onClick={() => setMode('prompts')}
+          className="p-2 rounded-lg bg-city-surface border border-city-border hover:bg-city-border text-city-text transition-colors"
+          title="Prompt Gallery"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </button>
+
         {/* Replay button (only in simulation mode) */}
         {mode === 'simulation' && (
           <button
@@ -275,6 +288,15 @@ export default function App() {
     return (
       <ErrorBoundary sectionName="Replay" onError={handleError}>
         <ReplayPage />
+      </ErrorBoundary>
+    );
+  }
+
+  // Prompts mode - render full-screen prompt gallery with error boundary
+  if (isPromptsMode) {
+    return (
+      <ErrorBoundary sectionName="Prompts" onError={handleError}>
+        <PromptsPage />
       </ErrorBoundary>
     );
   }

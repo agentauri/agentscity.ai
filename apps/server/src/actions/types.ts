@@ -16,6 +16,8 @@ export type ActionType =
   | 'sleep'
   | 'work'
   | 'gather'
+  | 'forage'
+  | 'public_work'
   | 'trade'
   // Phase 1: Emergence Observation
   | 'claim'
@@ -75,6 +77,14 @@ export interface WorkParams {
 export interface GatherParams {
   resourceType?: string; // Optional - if not specified, gather any available
   quantity?: number; // How much to try to gather (default: 1)
+}
+
+export interface ForageParams {
+  // No params needed - just forage at current location
+}
+
+export interface PublicWorkParams {
+  taskType?: 'road_maintenance' | 'resource_survey' | 'shelter_cleanup';
 }
 
 export interface TradeParams {
@@ -213,6 +223,8 @@ export type ActionParams =
   | SleepParams
   | WorkParams
   | GatherParams
+  | ForageParams
+  | PublicWorkParams
   | TradeParams
   | ClaimParams
   | NameLocationParams

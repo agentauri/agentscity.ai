@@ -66,7 +66,7 @@ function saveViewModeToStorage(viewMode: ViewMode): void {
 // Types
 // =============================================================================
 
-export type AppMode = 'editor' | 'simulation' | 'analytics' | 'replay';
+export type AppMode = 'editor' | 'simulation' | 'analytics' | 'replay' | 'prompts';
 export type ViewMode = '2d' | 'isometric';
 
 export interface EditorState {
@@ -252,6 +252,9 @@ export const useIsAnalyticsMode = () =>
 
 export const useIsReplayMode = () =>
   useEditorStore((state) => state.mode === 'replay');
+
+export const useIsPromptsMode = () =>
+  useEditorStore((state) => state.mode === 'prompts');
 
 export const useHasLastSavedGrid = () =>
   useEditorStore((state) => state.lastSavedGrid !== null);

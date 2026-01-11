@@ -19,6 +19,7 @@ const mockGetResourceSpawnsAtPosition = mock(() => Promise.resolve([] as Resourc
 const mockHarvestResource = mock(() => Promise.resolve(0));
 const mockAddToInventory = mock(() => Promise.resolve());
 const mockStoreMemory = mock(() => Promise.resolve({ id: 'test-memory' }));
+const mockGetAliveAgents = mock(() => Promise.resolve([] as Agent[]));
 
 mock.module('../../db/queries/world', () => ({
   getResourceSpawnsAtPosition: mockGetResourceSpawnsAtPosition,
@@ -31,6 +32,10 @@ mock.module('../../db/queries/inventory', () => ({
 
 mock.module('../../db/queries/memories', () => ({
   storeMemory: mockStoreMemory,
+}));
+
+mock.module('../../db/queries/agents', () => ({
+  getAliveAgents: mockGetAliveAgents,
 }));
 
 // Import after mocking
@@ -95,9 +100,11 @@ describe('handleGather', () => {
     mockHarvestResource.mockClear();
     mockAddToInventory.mockClear();
     mockStoreMemory.mockClear();
-    // Default: no spawns at position
+    mockGetAliveAgents.mockClear();
+    // Default: no spawns at position, no other agents (no cooperation bonus)
     mockGetResourceSpawnsAtPosition.mockImplementation(() => Promise.resolve([]));
     mockHarvestResource.mockImplementation(() => Promise.resolve(0));
+    mockGetAliveAgents.mockImplementation(() => Promise.resolve([]));
   });
 
   describe('successful gather', () => {

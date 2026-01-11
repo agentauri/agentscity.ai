@@ -93,6 +93,7 @@ function hasSocialOpportunity(obs: AgentObservation): boolean {
 
 /**
  * Generate survival decision using heuristics
+ * Includes social context for employment and trading decisions
  */
 function getSurvivalDecision(obs: AgentObservation): AgentDecision {
   return getFallbackDecision(
@@ -103,7 +104,11 @@ function getSurvivalDecision(obs: AgentObservation): AgentDecision {
     obs.self.y,
     obs.inventory,
     obs.nearbyResourceSpawns,
-    obs.nearbyShelters
+    obs.nearbyShelters,
+    // Social context (Phase 1.2)
+    obs.nearbyJobOffers,
+    obs.activeEmployments,
+    obs.nearbyAgents
   );
 }
 

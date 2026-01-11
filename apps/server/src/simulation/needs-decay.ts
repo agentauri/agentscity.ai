@@ -50,35 +50,39 @@ export function setCriticalTicks(agentId: string, ticks: { hunger: number; energ
   criticalTicksMap.set(agentId, ticks);
 }
 
-// Configuration
-const CONFIG = {
-  // Decay rates per tick (base values, modified by state)
-  hungerDecay: 1,
-  energyDecay: 0.5,
+// Configuration - uses global runtime config for decay rates
+// Thresholds and damage rates are kept local for stability
+const getDecayConfig = () => {
+  const runtime = getRuntimeConfig();
+  return {
+    // Decay rates from global config (can be tuned via API or env vars)
+    hungerDecay: runtime.needs.hungerDecay,
+    energyDecay: runtime.needs.energyDecay,
+    foodHungerRestore: runtime.actions.consume.effects.food?.hunger ?? 50,
 
-  // Thresholds
-  lowHungerThreshold: 20,
-  criticalHungerThreshold: 10,
-  lowEnergyThreshold: 20,
-  criticalEnergyThreshold: 10,
+    // Thresholds (stable, not expected to change at runtime)
+    lowHungerThreshold: 20,
+    criticalHungerThreshold: 10,
+    lowEnergyThreshold: 20,
+    criticalEnergyThreshold: 10,
 
-  // Damage rates
-  hungerEnergyDrain: 1, // Extra energy drain when hungry
-  criticalHungerHealthDamage: 2, // Health damage when critically hungry
-  criticalEnergyHealthDamage: 1, // Health damage when exhausted
+    // Damage rates
+    hungerEnergyDrain: 1, // Extra energy drain when hungry
+    criticalHungerHealthDamage: 2, // Health damage when critically hungry
+    criticalEnergyHealthDamage: 1, // Health damage when exhausted
 
-  // Grace Timer: ticks before HP damage starts (gives agents time to react)
-  graceTicksBeforeDamage: 3,
+    // Grace Timer: ticks before HP damage starts (gives agents time to react)
+    graceTicksBeforeDamage: 3,
 
-  // Health Regen: passive healing when well-fed and rested
-  healthRegenThresholdHunger: 70, // Must have hunger above this
-  healthRegenThresholdEnergy: 70, // Must have energy above this
-  healthRegenRate: 0.2, // HP restored per tick when conditions met
+    // Health Regen: passive healing when well-fed and rested
+    healthRegenThresholdHunger: 70, // Must have hunger above this
+    healthRegenThresholdEnergy: 70, // Must have energy above this
+    healthRegenRate: 0.2, // HP restored per tick when conditions met
 
-  // Auto-consume: eat food automatically when sleeping and critically hungry
-  autoConsumeHungerThreshold: 20, // Auto-eat when hunger drops below this during sleep
-  foodHungerRestore: 30, // How much hunger food restores
-} as const;
+    // Auto-consume: eat food automatically when sleeping and critically hungry
+    autoConsumeHungerThreshold: 20, // Auto-eat when hunger drops below this during sleep
+  };
+};
 
 // State-based decay multipliers
 // Walking agents get hungrier faster (exploring is tiring)
@@ -124,6 +128,9 @@ export type DecayEffect =
   | 'death';
 
 export async function applyNeedsDecay(agent: Agent, tick: number): Promise<DecayResult> {
+  // Get config at runtime (supports live tuning)
+  const CONFIG = getDecayConfig();
+
   const previousState = {
     hunger: agent.hunger,
     energy: agent.energy,
@@ -395,8 +402,9 @@ export async function applyNeedsDecay(agent: Agent, tick: number): Promise<Decay
 
 export function calculateSurvivalTicks(hunger: number, energy: number): number {
   // Rough estimate of how many ticks until death
-  const hungerTicks = hunger / CONFIG.hungerDecay;
-  const energyTicks = energy / CONFIG.energyDecay;
+  const config = getDecayConfig();
+  const hungerTicks = hunger / config.hungerDecay;
+  const energyTicks = energy / config.energyDecay;
   return Math.min(hungerTicks, energyTicks);
 }
 
