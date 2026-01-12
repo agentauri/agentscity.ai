@@ -354,8 +354,8 @@ export async function spawnInitialAgents(): Promise<void> {
     return;
   }
 
-  // Scarcity mode: reduced starting resources to encourage emergent behavior
-  const startingFood = 1; // Reduced from 3 to create urgency
+  // Starting resources: enough to enable initial trades
+  const startingFood = 5; // Increased to enable trade opportunities
 
   // Determine which agents to spawn
   const agentsToSpawn: AgentConfig[] = [...AGENT_CONFIGS];
@@ -501,7 +501,7 @@ export function getDefaultConfigurations(): SpawnConfiguration {
     agents: [...AGENT_CONFIGS],
     resourceSpawns: [...RESOURCE_SPAWN_CONFIGS],
     shelters: [...SHELTER_CONFIGS],
-    startingFood: 1,
+    startingFood: 5,
     includeBaselineAgents: CONFIG.experiment.includeBaselineAgents,
     baselineAgentCount: CONFIG.experiment.baselineAgentCount,
     enablePersonalities: CONFIG.experiment.enablePersonalities,
@@ -539,7 +539,7 @@ export async function spawnWorldWithConfig(config?: SpawnConfiguration): Promise
   let agents = config?.agents ?? AGENT_CONFIGS;
   const resourceSpawns = config?.resourceSpawns ?? RESOURCE_SPAWN_CONFIGS;
   const shelters = config?.shelters ?? SHELTER_CONFIGS;
-  const startingFood = config?.startingFood ?? 1;
+  const startingFood = config?.startingFood ?? 5;
 
   // Handle baseline agents
   const includeBaseline = config?.includeBaselineAgents ?? CONFIG.experiment.includeBaselineAgents;

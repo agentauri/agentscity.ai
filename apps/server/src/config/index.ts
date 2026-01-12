@@ -410,7 +410,7 @@ export const CONFIG = {
     enabled: envBool('SPOILAGE_ENABLED', true),
     /** Spoilage rates per tick (0-1, higher = faster decay) */
     rates: {
-      food: env('SPOILAGE_RATE_FOOD', 0.03),       // -3% per tick (perishable)
+      food: env('SPOILAGE_RATE_FOOD', 0.01),       // -1% per tick (slower decay to enable trades)
       water: env('SPOILAGE_RATE_WATER', 0.01),     // -1% per tick (slow evaporation)
       medicine: env('SPOILAGE_RATE_MEDICINE', 0.005), // -0.5% per tick (stable)
       battery: env('SPOILAGE_RATE_BATTERY', 0.002),   // -0.2% per tick (very stable)
@@ -459,7 +459,7 @@ export const CONFIG = {
   // ---------------------------------------------------------------------------
   agent: {
     /** Starting balance for new agents (reduced to force resource gathering) */
-    startingBalance: env('AGENT_STARTING_BALANCE', 20),
+    startingBalance: env('AGENT_STARTING_BALANCE', 50),
     /** Starting hunger for new agents (comfortable start) */
     startingHunger: env('AGENT_STARTING_HUNGER', 80),
     /** Starting energy for new agents (comfortable start) */
