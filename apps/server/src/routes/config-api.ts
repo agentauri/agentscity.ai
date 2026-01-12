@@ -596,6 +596,13 @@ export async function registerConfigRoutes(server: FastifyInstance): Promise<voi
       delete updates.experiment.useEmergentPrompt;
     }
 
+    // Handle experiment.enablePersonalities (requires restart for new agents)
+    if (updates.experiment?.enablePersonalities !== undefined) {
+      setRuntimeConfig({ experiment: { enablePersonalities: updates.experiment.enablePersonalities } });
+      requiresRestart.push('experiment.enablePersonalities');
+      delete updates.experiment.enablePersonalities;
+    }
+
     // Apply other updates to runtime config (will take effect on restart or for new agents)
     const runtimeUpdates: Parameters<typeof setRuntimeConfig>[0] = {};
 

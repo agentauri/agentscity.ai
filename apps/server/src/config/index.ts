@@ -846,6 +846,7 @@ export function getRuntimeConfig(): RuntimeConfigOverrides & typeof CONFIG {
     experiment: {
       ...CONFIG.experiment,
       useEmergentPrompt: isEmergentPromptEnabled(),
+      enablePersonalities: runtimeOverrides.experiment?.enablePersonalities ?? CONFIG.experiment.enablePersonalities,
     },
     actions: {
       ...CONFIG.actions,
@@ -923,6 +924,10 @@ export function setRuntimeConfig(updates: RuntimeConfigOverrides): void {
       sleep: { ...runtimeOverrides.actions?.sleep, ...updates.actions.sleep },
     } : runtimeOverrides.actions,
     economy: { ...runtimeOverrides.economy, ...updates.economy },
+    // Experiment config
+    experiment: updates.experiment ? {
+      enablePersonalities: updates.experiment.enablePersonalities ?? runtimeOverrides.experiment?.enablePersonalities,
+    } : runtimeOverrides.experiment,
     // Phase 4-6: Cooperation config
     cooperation: updates.cooperation ? {
       enabled: updates.cooperation.enabled ?? runtimeOverrides.cooperation?.enabled,
