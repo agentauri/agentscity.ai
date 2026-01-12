@@ -9,7 +9,7 @@
  * - Balance deducted
  */
 
-import { describe, expect, test, mock, beforeEach } from 'bun:test';
+import { describe, expect, test, mock, beforeEach, afterEach } from 'bun:test';
 import type { Agent, Shelter } from '../../db/schema';
 import type { ActionIntent, BuyParams } from '../../actions/types';
 
@@ -26,8 +26,11 @@ mock.module('../../db/queries/world', () => ({
   getSheltersAtPosition: mockGetSheltersAtPosition,
 }));
 
+const mockGetAgentRelationships = mock(() => Promise.resolve([]));
+
 mock.module('../../db/queries/memories', () => ({
   storeMemory: mockStoreMemory,
+  getAgentRelationships: mockGetAgentRelationships,
 }));
 
 // Import after mocking
@@ -85,12 +88,22 @@ function createMockShelter(overrides: Partial<Shelter> = {}): Shelter {
 }
 
 describe('handleBuy', () => {
+  // Store original Math.random
+  const originalRandom = Math.random;
+
   beforeEach(() => {
     mockAddToInventory.mockClear();
     mockGetSheltersAtPosition.mockClear();
     mockStoreMemory.mockClear();
     // Default: no shelter at position
     mockGetSheltersAtPosition.mockImplementation(() => Promise.resolve([]));
+    // Mock Math.random to always return 1.0 (so transaction never fails)
+    Math.random = () => 1.0;
+  });
+
+  afterEach(() => {
+    // Restore original Math.random
+    Math.random = originalRandom;
   });
 
   describe('successful purchase', () => {
@@ -171,7 +184,7 @@ describe('handleBuy', () => {
           agentId: agent.id,
           type: 'action',
           importance: 4,
-          emotionalValence: 0.2,
+          emotionalValence: 0.1, // 0.1 when no trust discount, 0.3 with discount
         })
       );
     });
@@ -376,15 +389,17 @@ describe('handleBuy', () => {
       expect(mockAddToInventory).toHaveBeenCalledWith(agent.id, 'food', 100);
     });
 
-    test('memory includes shelter position', async () => {
+    test('memory includes shelter position in metadata', async () => {
       const agent = createMockAgent({ x: 25, y: 35 });
       const intent = createBuyIntent('food', 1);
 
       await handleBuy(intent, agent);
 
       expect(mockStoreMemory.mock.calls.length).toBeGreaterThan(0);
-      const memoryCall = (mockStoreMemory.mock.calls as unknown[][])[0]?.[0] as { content: string } | undefined;
-      expect(memoryCall?.content).toContain('(25, 35)');
+      const memoryCall = (mockStoreMemory.mock.calls as unknown[][])[0]?.[0] as { x: number; y: number } | undefined;
+      // Position is stored in memory metadata, not in content string
+      expect(memoryCall?.x).toBe(25);
+      expect(memoryCall?.y).toBe(35);
     });
   });
 });

@@ -20,6 +20,7 @@ const mockHarvestResource = mock(() => Promise.resolve(0));
 const mockAddToInventory = mock(() => Promise.resolve());
 const mockStoreMemory = mock(() => Promise.resolve({ id: 'test-memory' }));
 const mockGetAliveAgents = mock(() => Promise.resolve([] as Agent[]));
+const mockCountAgentsAtPosition = mock(() => Promise.resolve(0));
 
 mock.module('../../db/queries/world', () => ({
   getResourceSpawnsAtPosition: mockGetResourceSpawnsAtPosition,
@@ -30,12 +31,16 @@ mock.module('../../db/queries/inventory', () => ({
   addToInventory: mockAddToInventory,
 }));
 
+const mockGetAgentRelationships = mock(() => Promise.resolve([]));
+
 mock.module('../../db/queries/memories', () => ({
   storeMemory: mockStoreMemory,
+  getAgentRelationships: mockGetAgentRelationships,
 }));
 
 mock.module('../../db/queries/agents', () => ({
   getAliveAgents: mockGetAliveAgents,
+  countAgentsAtPosition: mockCountAgentsAtPosition,
 }));
 
 // Import after mocking
@@ -102,10 +107,12 @@ describe('handleGather', () => {
     mockAddToInventory.mockClear();
     mockStoreMemory.mockClear();
     mockGetAliveAgents.mockClear();
+    mockCountAgentsAtPosition.mockClear();
     // Default: no spawns at position, no other agents (no cooperation bonus)
     mockGetResourceSpawnsAtPosition.mockImplementation(() => Promise.resolve([]));
     mockHarvestResource.mockImplementation(() => Promise.resolve(0));
     mockGetAliveAgents.mockImplementation(() => Promise.resolve([]));
+    mockCountAgentsAtPosition.mockImplementation(() => Promise.resolve(0));
   });
 
   describe('successful gather', () => {
@@ -114,6 +121,11 @@ describe('handleGather', () => {
         Promise.resolve([createMockResourceSpawn()])
       );
       mockHarvestResource.mockImplementation(() => Promise.resolve(1));
+      // Mock having another agent at same position to avoid solo penalty
+      // countAgentsAtPosition is local and uses getAliveAgents internally
+      mockGetAliveAgents.mockImplementation(() =>
+        Promise.resolve([createMockAgent({ id: 'other-agent', x: 50, y: 50 })])
+      );
     });
 
     test('gathers 1 resource by default', async () => {
