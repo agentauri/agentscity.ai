@@ -293,6 +293,9 @@ function savePendingToStorage(pending: Partial<ConfigResponse>): void {
 
 const API_BASE = '';
 
+// Admin API key for config modifications (default for development)
+const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || 'admin_secret_key_change_me';
+
 async function fetchConfigFromAPI(): Promise<{
   config: ConfigResponse;
   runtimeModifiable: string[];
@@ -314,7 +317,10 @@ async function updateConfigAPI(
 }> {
   const response = await fetch(`${API_BASE}/api/config`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Key': ADMIN_API_KEY,
+    },
     body: JSON.stringify(updates),
   });
   if (!response.ok) {
@@ -326,6 +332,9 @@ async function updateConfigAPI(
 async function resetConfigAPI(): Promise<{ success: boolean; config: ConfigResponse }> {
   const response = await fetch(`${API_BASE}/api/config/reset`, {
     method: 'POST',
+    headers: {
+      'X-Admin-Key': ADMIN_API_KEY,
+    },
   });
   if (!response.ok) {
     throw new Error(`Failed to reset config: ${response.statusText}`);
@@ -346,7 +355,10 @@ async function saveGenesisConfigAPI(
 ): Promise<{ success: boolean; requiresRestart: boolean }> {
   const response = await fetch(`${API_BASE}/api/config/genesis`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Key': ADMIN_API_KEY,
+    },
     body: JSON.stringify(config),
   });
   if (!response.ok) {
@@ -368,7 +380,10 @@ async function savePersonalityConfigAPI(
 ): Promise<{ success: boolean; weights: Record<PersonalityTrait, number>; requiresRestart: boolean }> {
   const response = await fetch(`${API_BASE}/api/config/personalities`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Key': ADMIN_API_KEY,
+    },
     body: JSON.stringify(config),
   });
   if (!response.ok) {
@@ -380,7 +395,10 @@ async function savePersonalityConfigAPI(
 async function resetPersonalityWeightsAPI(): Promise<{ success: boolean; weights: Record<PersonalityTrait, number> }> {
   const response = await fetch(`${API_BASE}/api/config/personalities/reset`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Key': ADMIN_API_KEY,
+    },
   });
   if (!response.ok) {
     throw new Error(`Failed to reset personality weights: ${response.statusText}`);
