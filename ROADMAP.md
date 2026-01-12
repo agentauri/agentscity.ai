@@ -1,6 +1,6 @@
 # SimAgents Roadmap
 
-> Last updated: 2026-01-11
+> Last updated: 2026-01-12
 
 ## Current Status
 
@@ -62,11 +62,24 @@ Real employment contracts replacing "magic work":
 - **Payment Types**: upfront, on_completion, per_tick with escrow protection
 - **Stigmergy**: Agents leave scent trails (Redis-based with TTL decay)
 - **Signals**: Long-range communication (1-5 intensity, 5-25 tile range)
-- **Cooperation Bonuses**: Gather efficiency +15-45% when working together
-- **Solo Penalties**: Reduced forage success (-20%) and public_work pay (-30%) when isolated
 - **New Survival Actions**: `forage` (anywhere, low yield), `public_work` (shelters, bootstrap economy)
 
-> See: [PRD Section 41](docs/PRD.md)
+#### Cooperation Incentives (Sugarscape-inspired)
+Comprehensive system to encourage emergent group behavior:
+- **Gather Cooperation**: +25% per agent at same location (max +75%), solo penalty -50%
+- **Group Gather (Rich Spawns)**: Spawns with 12+ resources require 2+ agents; solo limited to 2 units; group bonus +50%
+- **Forage Cooperation**: +15% success per nearby agent (max +45%), solo penalty -40%
+- **Public Work Cooperation**: +20% pay per nearby worker (max +60%), solo penalty -50%
+- **Trade Bonuses**: +20% items received with trusted partners (trust >20), +5% per prior interaction (max +25%)
+- **Trust-Based Pricing**: Shelter prices -10% at +100 trust, +10% at -100 trust
+- **Inventory Visibility**: Agents see nearby agents' inventories to enable informed trades
+
+#### Item Spoilage (Creates Trade Urgency)
+Perishable items decay each tick, encouraging consumption and trade:
+- Food/Water: -1%/tick | Medicine: -0.5%/tick | Battery: -0.2%/tick
+- Materials and tools do not decay
+
+> See: [PRD Section 41-42](docs/PRD.md)
 
 ---
 

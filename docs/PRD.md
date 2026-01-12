@@ -6431,25 +6431,85 @@ The original system allowed agents to survive indefinitely through solo strategi
 | `trade.trustGainOnSuccess` | 5 | 15 | 3x trust |
 | `memory.trustDecayPerTick` | 0.1 | 0.02 | 5x slower decay |
 
-#### Cooperation Bonuses
+#### Cooperation Bonuses (Sugarscape-inspired)
 
 ```typescript
 cooperation: {
   gather: {
-    efficiencyMultiplierPerAgent: 1.15,  // +15% per agent
-    maxEfficiencyMultiplier: 1.45,        // cap +45%
+    efficiencyMultiplierPerAgent: 1.25,  // +25% per agent at same location
+    maxEfficiencyMultiplier: 1.75,        // cap +75%
+    cooperationRadius: 3,
+  },
+  forage: {
+    nearbyAgentBonus: 0.15,              // +15% per nearby agent
+    maxCooperationBonus: 0.45,           // cap at +45%
+    cooperationRadius: 3,
   },
   work: {
-    nearbyWorkerBonus: 0.2,               // +20% with others
+    nearbyWorkerBonus: 0.2,              // +20% with others
     nearbyWorkerRadius: 3,
   },
+  groupGather: {
+    enabled: true,
+    richSpawnThreshold: 12,              // Spawns with 12+ require groups
+    minAgentsForRich: 2,                 // Need 2+ agents for rich spawns
+    soloMaxFromRich: 2,                  // Solo limited to 2 from rich
+    groupBonus: 1.5,                     // +50% when gathering in group
+  },
+  buy: {
+    trustPriceModifier: 0.001,           // ±10% at ±100 trust
+    minTrustDiscount: -0.1,              // max -10% discount (high trust)
+    maxTrustPenalty: 0.1,                // max +10% penalty (low trust)
+  },
   solo: {
-    forageSuccessRateModifier: 0.8,       // -20% alone
-    publicWorkPaymentModifier: 0.7,       // -30% alone
+    forageSuccessRateModifier: 0.6,      // -40% alone (was -20%)
+    publicWorkPaymentModifier: 0.5,      // -50% alone (was -30%)
+    gatherEfficiencyModifier: 0.5,       // -50% alone (new)
     aloneRadius: 5,
   },
 }
 ```
+
+#### Item Spoilage (Creates Trade Urgency)
+
+Perishable items decay each tick, encouraging consumption and trade:
+
+```typescript
+spoilage: {
+  enabled: true,
+  rates: {
+    food: 0.01,      // -1% per tick
+    water: 0.01,     // -1% per tick
+    medicine: 0.005, // -0.5% per tick
+    battery: 0.002,  // -0.2% per tick
+    material: 0,     // No decay
+    tool: 0,         // No decay
+  },
+  removalThreshold: 0.5,  // Remove items at <0.5 quantity
+}
+```
+
+#### Trade Bonuses
+
+```typescript
+trade: {
+  trustBonusThreshold: 20,               // Min trust for bonus
+  trustedPartnerQuantityBonus: 0.2,      // +20% items received
+  loyaltyBonusPerInteraction: 0.05,      // +5% per prior trade
+  maxLoyaltyBonus: 0.25,                 // cap at +25%
+  trustGainMultiplier: {
+    highTrust: 1.5,                      // 50% more trust gain
+    mediumTrust: 1.2,                    // 20% more trust gain
+  },
+}
+```
+
+#### Inventory Visibility
+
+Agents can see nearby agents' inventories to enable informed trade decisions:
+- Within 3 tiles: Full inventory visible in observations
+- Trade opportunity section highlights complementary needs
+- Builds on information asymmetry from academic research
 
 ### 42.3 Employment Visibility Fix
 

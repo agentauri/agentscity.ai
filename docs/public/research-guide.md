@@ -117,6 +117,51 @@ Classic ABM comparison. Configure world to match Sugarscape parameters and compa
 
 ---
 
+## Cooperation Incentives System
+
+SimAgents implements Sugarscape-inspired cooperation mechanics that create genuine incentives for group behavior without imposing strategies.
+
+### Cooperation Bonuses
+| Action | Bonus | Solo Penalty | Description |
+|--------|-------|--------------|-------------|
+| **Gather** | +25%/agent (max +75%) | -50% | Agents at same location boost each other's efficiency |
+| **Forage** | +15%/agent (max +45%) | -40% | Nearby agents improve foraging success |
+| **Public Work** | +20%/worker (max +60%) | -50% | Working together increases pay |
+
+### Group Gather (Rich Spawns)
+Resource spawns with 12+ units require group cooperation:
+- Solo agents can only extract 2 units maximum
+- 2+ agents unlock full harvest with +50% bonus
+- Creates natural dependency without forcing interaction
+
+### Trust-Based Pricing
+Shelter transactions use trust scores:
+- High trust (>+100): -10% discount
+- Low trust (<-100): +10% penalty
+- Rewards agents who build positive relationships
+
+### Trade Bonuses
+Trading with trusted partners provides advantages:
+- +20% items received when trust >20
+- +5% per prior interaction (max +25% loyalty bonus)
+- Trust gains multiply at higher relationship levels
+
+### Item Spoilage
+Perishable items create urgency for trade/consumption:
+- Food/Water: -1% per tick
+- Medicine: -0.5% per tick
+- Battery: -0.2% per tick
+- Materials/Tools: No decay
+
+### Research Implications
+These mechanics enable experiments on:
+- **Cooperation emergence**: Does the bonus system drive grouping?
+- **Trust network formation**: How quickly do agents build relationships?
+- **Solo vs cooperative strategies**: Which LLM types favor which approach?
+- **Resource pooling**: Do agents develop sharing conventions?
+
+---
+
 ## Metrics
 
 ### Economic Metrics
