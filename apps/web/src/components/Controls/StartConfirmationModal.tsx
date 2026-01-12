@@ -34,7 +34,7 @@ export function StartConfirmationModal({
   onOpenConfig,
   isLoading,
 }: StartConfirmationModalProps) {
-  const { genesisConfig, personalityConfig } = useConfigStore();
+  const { genesisConfig, personalityConfig, config, pendingChanges } = useConfigStore();
   const { providers, status, isSynced, fetchStatus } = useApiKeysStore();
 
   // Fetch API keys status when modal opens if not already synced
@@ -84,7 +84,11 @@ export function StartConfirmationModal({
   const hasKeys = activeProviders.length > 0;
 
   // Get personality weights for display
-  const { weights, enabled: personalitiesEnabled } = personalityConfig;
+  // Read enabled state from server config (with pending changes), not from local personalityConfig
+  const { weights } = personalityConfig;
+  const personalitiesEnabled = pendingChanges?.experiment?.enablePersonalities
+    ?? config?.experiment?.enablePersonalities
+    ?? false;
 
   return (
     <div
