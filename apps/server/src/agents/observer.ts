@@ -107,12 +107,34 @@ export async function buildObservation(
       VISIBILITY_RADIUS
     );
 
-    nearbyAgents = visibleAgents.map((a) => ({
-      id: a.id,
-      x: a.x,
-      y: a.y,
-      state: a.state,
-    }));
+    // Phase 4: Fetch inventory for close agents (within cooperation range)
+    // This enables trade by letting agents know what others have
+    const COOPERATION_RANGE = CONFIG.cooperation.forage.cooperationRadius ?? 3;
+
+    nearbyAgents = await Promise.all(
+      visibleAgents.map(async (a) => {
+        const distance = Math.abs(a.x - agent.x) + Math.abs(a.y - agent.y);
+        const baseAgent: NearbyAgent = {
+          id: a.id,
+          x: a.x,
+          y: a.y,
+          state: a.state,
+        };
+
+        // Only fetch inventory for close agents to enable trade decisions
+        if (distance <= COOPERATION_RANGE) {
+          const rawInventory = await getAgentInventory(a.id);
+          if (rawInventory.length > 0) {
+            baseAgent.inventory = rawInventory.map((item) => ({
+              type: item.itemType,
+              quantity: item.quantity,
+            }));
+          }
+        }
+
+        return baseAgent;
+      })
+    );
   }
 
   // Nearby resource spawns

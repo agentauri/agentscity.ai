@@ -96,6 +96,35 @@ export async function removeFromInventory(
 }
 
 /**
+ * Update inventory quantity directly (for spoilage system)
+ * If newQuantity <= 0, deletes the item
+ */
+export async function updateInventoryQuantity(
+  agentId: string,
+  itemType: string,
+  newQuantity: number
+): Promise<number> {
+  const item = await getInventoryItem(agentId, itemType);
+
+  if (!item) {
+    return -1; // Item not found
+  }
+
+  if (newQuantity <= 0) {
+    // Delete the record
+    await db.delete(inventory).where(eq(inventory.id, item.id));
+    return 0;
+  } else {
+    // Update quantity
+    await db
+      .update(inventory)
+      .set({ quantity: newQuantity })
+      .where(eq(inventory.id, item.id));
+    return newQuantity;
+  }
+}
+
+/**
  * Delete all inventory items (for world reset)
  */
 export async function deleteAllInventory(): Promise<void> {

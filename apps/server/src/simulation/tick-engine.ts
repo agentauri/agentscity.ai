@@ -25,7 +25,7 @@ import { getAliveAgents, updateAgent } from '../db/queries/agents';
 import { appendEvent } from '../db/queries/events';
 import { publishEvent, type WorldEvent } from '../cache/pubsub';
 import { setCachedTick, setCachedWorldState, setCachedAgents } from '../cache/projections';
-import { applyNeedsDecay, applyCurrencyDecay, type DecayResult } from './needs-decay';
+import { applyNeedsDecay, applyCurrencyDecay, applyItemSpoilage, type DecayResult } from './needs-decay';
 import { processAgentsTick } from '../agents/orchestrator';
 import { captureVariantSnapshot, updateVariantStatus, updateExperimentStatus, getNextPendingVariant } from '../db/queries/experiments';
 import { updateAllAgentRoles } from '../db/queries/roles';
@@ -268,6 +268,17 @@ class TickEngine {
       if (currencyResult.applied && currencyResult.event) {
         allEvents.push(currencyResult.event);
         await publishEvent(currencyResult.event);
+      }
+    }
+
+    // Phase 5c: ITEM SPOILAGE - Apply item decay to create urgency
+    for (const agent of agents) {
+      if (deaths.includes(agent.id)) continue;
+
+      const spoilageResult = await applyItemSpoilage(agent, tick);
+      for (const event of spoilageResult.events) {
+        allEvents.push(event);
+        await publishEvent(event);
       }
     }
 

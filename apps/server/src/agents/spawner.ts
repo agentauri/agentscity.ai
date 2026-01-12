@@ -167,9 +167,16 @@ export interface ResourceSpawnConfig {
   biome?: BiomeType; // Will be auto-assigned if not specified
 }
 
-// Resources distributed geographically - no functional labels
-// This creates "resource mountains" like Sugarscape
+// Resources distributed geographically - more dense and accessible to encourage gathering
+// Increased spawn count and placed closer to central shelters (around 30,20)
 const RESOURCE_SPAWN_CONFIGS: ResourceSpawnConfig[] = [
+  // CENTRAL FOOD CLUSTER (near starting shelters - high priority!)
+  { resourceType: 'food', x: 28, y: 18, maxAmount: 20, regenRate: 1.2 },
+  { resourceType: 'food', x: 32, y: 18, maxAmount: 20, regenRate: 1.2 },
+  { resourceType: 'food', x: 30, y: 22, maxAmount: 15, regenRate: 1.0 },
+  { resourceType: 'food', x: 26, y: 20, maxAmount: 15, regenRate: 1.0 },
+  { resourceType: 'food', x: 34, y: 20, maxAmount: 15, regenRate: 1.0 },
+
   // Food cluster (northwest area)
   { resourceType: 'food', x: 20, y: 15, maxAmount: 20, regenRate: 1.0 },
   { resourceType: 'food', x: 22, y: 16, maxAmount: 15, regenRate: 0.8 },
@@ -181,6 +188,11 @@ const RESOURCE_SPAWN_CONFIGS: ResourceSpawnConfig[] = [
   { resourceType: 'food', x: 47, y: 42, maxAmount: 15, regenRate: 0.8 },
   { resourceType: 'food', x: 43, y: 38, maxAmount: 10, regenRate: 0.5 },
 
+  // CENTRAL ENERGY CLUSTER (near starting shelters)
+  { resourceType: 'energy', x: 30, y: 16, maxAmount: 15, regenRate: 0.8 },
+  { resourceType: 'energy', x: 32, y: 22, maxAmount: 12, regenRate: 0.6 },
+  { resourceType: 'energy', x: 26, y: 18, maxAmount: 12, regenRate: 0.6 },
+
   // Energy cluster (northeast area)
   { resourceType: 'energy', x: 50, y: 10, maxAmount: 15, regenRate: 0.6 },
   { resourceType: 'energy', x: 52, y: 12, maxAmount: 12, regenRate: 0.5 },
@@ -190,7 +202,11 @@ const RESOURCE_SPAWN_CONFIGS: ResourceSpawnConfig[] = [
   { resourceType: 'energy', x: 10, y: 45, maxAmount: 15, regenRate: 0.6 },
   { resourceType: 'energy', x: 12, y: 47, maxAmount: 12, regenRate: 0.5 },
 
-  // Material cluster (center)
+  // CENTRAL MATERIAL CLUSTER (near starting shelters)
+  { resourceType: 'material', x: 28, y: 24, maxAmount: 20, regenRate: 0.4 },
+  { resourceType: 'material', x: 34, y: 22, maxAmount: 15, regenRate: 0.3 },
+
+  // Material cluster (center-south)
   { resourceType: 'material', x: 30, y: 30, maxAmount: 25, regenRate: 0.3 },
   { resourceType: 'material', x: 32, y: 32, maxAmount: 20, regenRate: 0.3 },
   { resourceType: 'material', x: 28, y: 28, maxAmount: 15, regenRate: 0.2 },

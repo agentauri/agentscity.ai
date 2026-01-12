@@ -97,6 +97,8 @@ export interface NearbyAgent {
   y: number;
   state: string;
   // Note: no needs/balance visible - agents must infer or ask
+  // Phase 4: Inventory visibility for close agents (trade enablement)
+  inventory?: InventoryEntry[]; // Only populated for agents within cooperation range (distance <= 3)
 }
 
 export interface NearbyLocation {

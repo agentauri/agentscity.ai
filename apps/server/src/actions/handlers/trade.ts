@@ -21,6 +21,7 @@ import { getInventoryItem } from '../../db/queries/inventory';
 import { updateRelationshipTrust, storeMemory } from '../../db/queries/memories';
 import { getDistance } from '../../world/grid';
 import { CONFIG } from '../../config';
+import { getAgentRelationships } from '../../db/queries/memories';
 
 export interface TradeParams {
   targetAgentId: string;
@@ -96,6 +97,21 @@ export async function handleTrade(
     };
   }
 
+  // Phase 6: Calculate trade bonuses based on trust and loyalty
+  const relationships = await getAgentRelationships(agent.id);
+  const relationship = relationships.find(r => r.otherAgentId === targetAgentId);
+  const trustLevel = relationship?.trustScore ?? 0;
+  const interactionCount = relationship?.interactionCount ?? 0;
+
+  // Trust bonus: +20% items received when trading with trusted partner (trust > 20)
+  const trustBonus = trustLevel > 20 ? 0.2 : 0;
+
+  // Loyalty bonus: +5% per successful interaction, capped at +25%
+  const loyaltyBonus = Math.min(interactionCount * 0.05, 0.25);
+
+  // Total quantity bonus for received items
+  const quantityBonusMultiplier = 1 + trustBonus + loyaltyBonus;
+
   // Check target has the requested items
   const targetItem = await getInventoryItem(targetAgentId, requestingItemType);
   if (!targetItem || targetItem.quantity < requestingQuantity) {
@@ -118,6 +134,12 @@ export async function handleTrade(
       error: `Target agent doesn't have enough ${requestingItemType} (have: ${targetItem?.quantity ?? 0}, need: ${requestingQuantity})`,
     };
   }
+
+  // Phase 6: Calculate actual received quantity with trust/loyalty bonus
+  const bonusQuantityReceived = Math.floor(requestingQuantity * quantityBonusMultiplier);
+  const bonusNote = quantityBonusMultiplier > 1
+    ? ` (BONUS: +${Math.round((quantityBonusMultiplier - 1) * 100)}% from trust/loyalty)`
+    : '';
 
   // Execute trade atomically using a database transaction
   try {
@@ -166,18 +188,18 @@ export async function handleTrade(
         await tx.delete(inventory).where(eq(inventory.id, targetUpdate[0].id));
       }
 
-      // Add items to initiator (upsert)
+      // Add items to initiator (upsert) with bonus applied
       await tx
         .insert(inventory)
         .values({
           id: uuid(),
           agentId: agent.id,
           itemType: requestingItemType,
-          quantity: requestingQuantity,
+          quantity: bonusQuantityReceived,
         })
         .onConflictDoUpdate({
           target: [inventory.agentId, inventory.itemType],
-          set: { quantity: sql`${inventory.quantity} + ${requestingQuantity}` },
+          set: { quantity: sql`${inventory.quantity} + ${bonusQuantityReceived}` },
         });
 
       // Add items to target (upsert)
@@ -201,27 +223,31 @@ export async function handleTrade(
     };
   }
 
-  // Update trust for both agents (symmetric positive relationship)
+  // Trust-based bonus: higher trust = more trust gain from successful trade (relationships already queried above)
+  const trustMultiplier = trustLevel > 20 ? 1.5 : trustLevel > 0 ? 1.2 : 1.0;
+  const bonusTrustGain = Math.floor(CONFIG.actions.trade.trustGainOnSuccess * trustMultiplier);
+
+  // Update trust for both agents (symmetric positive relationship with trust bonus)
   await updateRelationshipTrust(
     agent.id,
     targetAgentId,
-    CONFIG.actions.trade.trustGainOnSuccess,
+    bonusTrustGain,
     intent.tick,
-    `Traded ${offeringQuantity}x ${offeringItemType} for ${requestingQuantity}x ${requestingItemType}`
+    `Traded ${offeringQuantity}x ${offeringItemType} for ${requestingQuantity}x ${requestingItemType}${trustMultiplier > 1 ? ` (trust bonus: +${bonusTrustGain})` : ''}`
   );
   await updateRelationshipTrust(
     targetAgentId,
     agent.id,
-    CONFIG.actions.trade.trustGainOnSuccess,
+    bonusTrustGain,
     intent.tick,
-    `Traded ${requestingQuantity}x ${requestingItemType} for ${offeringQuantity}x ${offeringItemType}`
+    `Traded ${requestingQuantity}x ${requestingItemType} for ${offeringQuantity}x ${offeringItemType}${trustMultiplier > 1 ? ` (trust bonus: +${bonusTrustGain})` : ''}`
   );
 
   // Store memories for both agents
   await storeMemory({
     agentId: agent.id,
     type: 'interaction',
-    content: `Successfully traded ${offeringQuantity}x ${offeringItemType} for ${requestingQuantity}x ${requestingItemType} with another agent.`,
+    content: `Successfully traded ${offeringQuantity}x ${offeringItemType} for ${bonusQuantityReceived}x ${requestingItemType} with another agent${bonusNote}.`,
     importance: 6,
     emotionalValence: 0.5,
     involvedAgentIds: [targetAgentId],
@@ -257,7 +283,11 @@ export async function handleTrade(
           targetId: targetAgentId,
           position: { x: agent.x, y: agent.y },
           offered: { itemType: offeringItemType, quantity: offeringQuantity },
-          received: { itemType: requestingItemType, quantity: requestingQuantity },
+          received: { itemType: requestingItemType, quantity: bonusQuantityReceived },
+          baseQuantityRequested: requestingQuantity,
+          quantityBonusMultiplier,
+          trustBonus,
+          loyaltyBonus,
         },
       },
       // Also emit event for the target (for UI tracking)

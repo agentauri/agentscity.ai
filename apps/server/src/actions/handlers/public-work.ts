@@ -35,6 +35,24 @@ async function isAgentAlone(agentId: string, x: number, y: number): Promise<bool
   return nearbyAgents.length === 0;
 }
 
+/**
+ * Count nearby workers for cooperation bonus
+ * Returns count of agents within work cooperation radius
+ */
+async function countNearbyWorkers(agentId: string, x: number, y: number): Promise<number> {
+  const coopConfig = CONFIG.cooperation;
+  if (!coopConfig.enabled) return 0;
+
+  const aliveAgents = await getAliveAgents();
+  const nearbyWorkers = aliveAgents.filter((a) => {
+    if (a.id === agentId) return false;
+    const distance = Math.abs(a.x - x) + Math.abs(a.y - y);
+    return distance <= coopConfig.work.nearbyWorkerRadius;
+  });
+
+  return nearbyWorkers.length;
+}
+
 // Track active public work sessions
 interface PublicWorkSession {
   startTick: number;
@@ -109,14 +127,31 @@ export async function handlePublicWork(
   const isComplete = session.ticksWorked >= config.ticksPerTask;
   let payment = 0;
   let newBalance = agent.balance;
+  let nearbyWorkerCount = 0;
+  let paymentModifier = 1.0;
 
   if (isComplete) {
     // Complete task, pay agent, reset session
-    // Apply solo penalty if agent is alone
+    // Apply solo penalty if agent is alone OR cooperation bonus if workers nearby
     const alone = await isAgentAlone(agent.id, agent.x, agent.y);
-    const paymentModifier = alone && CONFIG.cooperation.enabled
-      ? CONFIG.cooperation.solo.publicWorkPaymentModifier
-      : 1.0;
+    nearbyWorkerCount = await countNearbyWorkers(agent.id, agent.x, agent.y);
+
+    let cooperationNote = '';
+
+    if (alone && CONFIG.cooperation.enabled) {
+      // Solo penalty: reduced payment when working alone
+      paymentModifier = CONFIG.cooperation.solo.publicWorkPaymentModifier;
+      cooperationNote = ' (solo work penalty)';
+    } else if (nearbyWorkerCount > 0 && CONFIG.cooperation.enabled) {
+      // Cooperation bonus: +20% per nearby worker, capped at +60%
+      const coopBonus = Math.min(
+        nearbyWorkerCount * CONFIG.cooperation.work.nearbyWorkerBonus,
+        0.6 // cap at +60%
+      );
+      paymentModifier = 1.0 + coopBonus;
+      cooperationNote = ` (cooperation bonus: +${Math.round(coopBonus * 100)}% from ${nearbyWorkerCount} nearby workers)`;
+    }
+
     payment = Math.floor(config.paymentPerTask * paymentModifier);
     newBalance = agent.balance + payment;
     activeSessions.delete(agent.id);
@@ -124,9 +159,9 @@ export async function handlePublicWork(
     await storeMemory({
       agentId: agent.id,
       type: 'action',
-      content: `Completed public work task (${taskType}) at shelter. Earned ${payment} CITY.`,
+      content: `Completed public work task (${taskType}) at shelter. Earned ${payment} CITY${cooperationNote}.`,
       importance: 5,
-      emotionalValence: 0.4,
+      emotionalValence: nearbyWorkerCount > 0 ? 0.6 : 0.4, // Higher satisfaction when cooperating
       x: agent.x,
       y: agent.y,
       tick: intent.tick,
@@ -166,6 +201,11 @@ export async function handlePublicWork(
           energyCost: config.energyCostPerTick,
           newEnergy,
           newBalance: isComplete ? newBalance : agent.balance,
+          // Cooperation tracking
+          nearbyWorkers: isComplete ? nearbyWorkerCount : 0,
+          cooperationBonus: isComplete && nearbyWorkerCount > 0
+            ? Math.round((paymentModifier - 1) * 100)
+            : 0,
         },
       },
       // Emit balance_changed if payment was made

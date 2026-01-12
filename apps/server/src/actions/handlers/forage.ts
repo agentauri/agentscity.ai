@@ -35,6 +35,25 @@ async function isAgentAlone(agentId: string, x: number, y: number): Promise<bool
   return nearbyAgents.length === 0;
 }
 
+/**
+ * Count nearby foragers for cooperation bonus
+ * Returns count of agents within cooperation radius
+ */
+async function countNearbyForagers(agentId: string, x: number, y: number): Promise<number> {
+  const coopConfig = CONFIG.cooperation;
+  if (!coopConfig.enabled) return 0;
+
+  const cooperationRadius = coopConfig.forage?.cooperationRadius ?? 3;
+  const aliveAgents = await getAliveAgents();
+  const nearbyForagers = aliveAgents.filter((a) => {
+    if (a.id === agentId) return false;
+    const distance = Math.abs(a.x - x) + Math.abs(a.y - y);
+    return distance <= cooperationRadius;
+  });
+
+  return nearbyForagers.length;
+}
+
 // Track forage cooldowns per location per agent
 const forageCooldowns = new Map<string, number>();
 
@@ -85,11 +104,25 @@ export async function handleForage(
     }
   }
 
-  // Calculate success rate with solo penalty
+  // Calculate success rate with solo penalty OR cooperation bonus
   let effectiveSuccessRate = config.baseSuccessRate;
+  let cooperationNote = '';
   const alone = await isAgentAlone(agent.id, agent.x, agent.y);
+  const nearbyForagerCount = await countNearbyForagers(agent.id, agent.x, agent.y);
+
   if (alone && CONFIG.cooperation.enabled) {
+    // Solo penalty: reduced success rate when foraging alone
     effectiveSuccessRate *= CONFIG.cooperation.solo.forageSuccessRateModifier;
+    cooperationNote = ' (solo foraging penalty)';
+  } else if (nearbyForagerCount > 0 && CONFIG.cooperation.enabled) {
+    // Cooperation bonus: +15% per nearby agent, capped at +45%
+    const bonusPerAgent = CONFIG.cooperation.forage?.nearbyAgentBonus ?? 0.15;
+    const maxBonus = CONFIG.cooperation.forage?.maxCooperationBonus ?? 0.45;
+    const coopBonus = Math.min(nearbyForagerCount * bonusPerAgent, maxBonus);
+    effectiveSuccessRate *= (1 + coopBonus);
+    // Cap at 95% max success rate
+    effectiveSuccessRate = Math.min(effectiveSuccessRate, 0.95);
+    cooperationNote = ` (cooperation bonus: +${Math.round(coopBonus * 100)}% from ${nearbyForagerCount} nearby)`;
   }
 
   // Calculate success (random based on success rate)
@@ -104,7 +137,7 @@ export async function handleForage(
     await storeMemory({
       agentId: agent.id,
       type: 'action',
-      content: `Foraged at (${agent.x}, ${agent.y}) but found nothing useful.`,
+      content: `Foraged at (${agent.x}, ${agent.y}) but found nothing useful${cooperationNote}.`,
       importance: 2,
       emotionalValence: -0.1,
       x: agent.x,
@@ -120,7 +153,7 @@ export async function handleForage(
       events: [
         {
           id: uuid(),
-          type: 'agent_foraged',
+          type: 'agent_forage',
           tick: intent.tick,
           timestamp: Date.now(),
           agentId: agent.id,
@@ -130,6 +163,8 @@ export async function handleForage(
             foodFound: 0,
             energyCost: config.energyCost,
             newEnergy,
+            nearbyForagers: nearbyForagerCount,
+            effectiveSuccessRate: Math.round(effectiveSuccessRate * 100),
           },
         },
       ],
@@ -143,9 +178,9 @@ export async function handleForage(
   await storeMemory({
     agentId: agent.id,
     type: 'action',
-    content: `Foraged at (${agent.x}, ${agent.y}) and found ${foodFound} food! A lucky find.`,
+    content: `Foraged at (${agent.x}, ${agent.y}) and found ${foodFound} food${cooperationNote}! A lucky find.`,
     importance: 4,
-    emotionalValence: 0.3,
+    emotionalValence: nearbyForagerCount > 0 ? 0.5 : 0.3, // Higher satisfaction when cooperating
     x: agent.x,
     y: agent.y,
     tick: intent.tick,
@@ -159,7 +194,7 @@ export async function handleForage(
     events: [
       {
         id: uuid(),
-        type: 'agent_foraged',
+        type: 'agent_forage',
         tick: intent.tick,
         timestamp: Date.now(),
         agentId: agent.id,
@@ -169,6 +204,8 @@ export async function handleForage(
           foodFound,
           energyCost: config.energyCost,
           newEnergy,
+          nearbyForagers: nearbyForagerCount,
+          effectiveSuccessRate: Math.round(effectiveSuccessRate * 100),
         },
       },
     ],

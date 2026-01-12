@@ -90,6 +90,7 @@ function createMockResourceSpawn(overrides: Partial<ResourceSpawn> = {}): Resour
     createdAt: new Date(),
     tenantId: null,
     biome: 'plains',
+    discovered: false,
     ...overrides,
   };
 }

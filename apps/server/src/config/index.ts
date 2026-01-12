@@ -128,13 +128,17 @@ export const CONFIG = {
     },
 
     buy: {
-      /** Item prices in CITY currency */
+      /** Item prices in CITY currency (increased to encourage gathering/trading) */
       prices: {
-        food: env('PRICE_FOOD', 10),
-        water: env('PRICE_WATER', 5),
-        medicine: env('PRICE_MEDICINE', 20),
-        tool: env('PRICE_TOOL', 30),
+        food: env('PRICE_FOOD', 25),
+        water: env('PRICE_WATER', 15),
+        medicine: env('PRICE_MEDICINE', 40),
+        tool: env('PRICE_TOOL', 50),
       },
+      /** Energy cost for shelter transactions (encourages trading) */
+      energyCost: env('BUY_ENERGY_COST', 3),
+      /** Failure rate for shelter purchases (encourages trading) */
+      failureRate: env('BUY_FAILURE_RATE', 0.15),
     },
 
     consume: {
@@ -308,10 +312,26 @@ export const CONFIG = {
 
     /** Gather cooperation bonuses */
     gather: {
-      /** Efficiency multiplier per additional agent at same location (+15% per agent) */
-      efficiencyMultiplierPerAgent: env('GATHER_COOP_MULTIPLIER', 1.15),
-      /** Maximum efficiency multiplier (cap at +45%) */
-      maxEfficiencyMultiplier: env('GATHER_COOP_MAX_MULTIPLIER', 1.45),
+      /** Efficiency multiplier per additional agent at same location (+25% per agent) */
+      efficiencyMultiplierPerAgent: env('GATHER_COOP_MULTIPLIER', 1.25),
+      /** Maximum efficiency multiplier (cap at +75%) */
+      maxEfficiencyMultiplier: env('GATHER_COOP_MAX_MULTIPLIER', 1.75),
+      /** Cooperation radius for detecting nearby agents */
+      cooperationRadius: env('GATHER_COOP_RADIUS', 3),
+    },
+
+    /** Group Gather Requirements (Sugarscape Cooperation Threshold) */
+    groupGather: {
+      /** Enable group gather requirements for rich spawns */
+      enabled: envBool('GROUP_GATHER_ENABLED', true),
+      /** Spawn current amount threshold that requires group (rich spawn) */
+      richSpawnThreshold: env('GROUP_GATHER_RICH_THRESHOLD', 12),
+      /** Minimum agents required to fully harvest a rich spawn */
+      minAgentsForRich: env('GROUP_GATHER_MIN_AGENTS', 2),
+      /** Maximum a solo agent can gather from rich spawn */
+      soloMaxFromRich: env('GROUP_GATHER_SOLO_MAX', 2),
+      /** Bonus multiplier when gathering in group (+50%) */
+      groupBonus: env('GROUP_GATHER_BONUS', 1.5),
     },
 
     /** Work cooperation bonuses */
@@ -322,12 +342,34 @@ export const CONFIG = {
       nearbyWorkerRadius: env('WORK_COOP_RADIUS', 3),
     },
 
+    /** Forage cooperation bonuses */
+    forage: {
+      /** Success rate bonus per nearby agent (+15%) */
+      nearbyAgentBonus: env('FORAGE_COOP_BONUS', 0.15),
+      /** Maximum cooperation bonus (cap at +45%) */
+      maxCooperationBonus: env('FORAGE_COOP_MAX_BONUS', 0.45),
+      /** Radius to detect nearby foragers */
+      cooperationRadius: env('FORAGE_COOP_RADIUS', 3),
+    },
+
+    /** Buy trust-based pricing */
+    buy: {
+      /** Price modifier per trust point (±10% at ±100 trust) */
+      trustPriceModifier: env('BUY_TRUST_MODIFIER', 0.001),
+      /** Maximum discount for high trust (-10%) */
+      minTrustDiscount: env('BUY_MIN_DISCOUNT', -0.1),
+      /** Maximum penalty for low trust (+10%) */
+      maxTrustPenalty: env('BUY_MAX_PENALTY', 0.1),
+    },
+
     /** Solo penalties (discourage isolation) */
     solo: {
-      /** Forage success rate modifier when alone (-20%) */
-      forageSuccessRateModifier: env('SOLO_FORAGE_MODIFIER', 0.8),
-      /** Public work payment modifier when alone (-30%) */
-      publicWorkPaymentModifier: env('SOLO_PUBLIC_WORK_MODIFIER', 0.7),
+      /** Forage success rate modifier when alone (-40%) */
+      forageSuccessRateModifier: env('SOLO_FORAGE_MODIFIER', 0.6),
+      /** Public work payment modifier when alone (-50%) */
+      publicWorkPaymentModifier: env('SOLO_PUBLIC_WORK_MODIFIER', 0.5),
+      /** Gather efficiency modifier when alone (-50%) */
+      gatherEfficiencyModifier: env('SOLO_GATHER_MODIFIER', 0.5),
       /** Radius to determine if agent is alone */
       aloneRadius: env('SOLO_ALONE_RADIUS', 5),
     },
@@ -358,6 +400,25 @@ export const CONFIG = {
     criticalHungerHealthDamage: env('NEEDS_HUNGER_HEALTH_DAMAGE', 2),
     /** Health damage when critically exhausted */
     criticalEnergyHealthDamage: env('NEEDS_ENERGY_HEALTH_DAMAGE', 1),
+  },
+
+  // ---------------------------------------------------------------------------
+  // Item Spoilage (Fase 3: Creates urgency to trade/consume)
+  // ---------------------------------------------------------------------------
+  spoilage: {
+    /** Enable item spoilage system */
+    enabled: envBool('SPOILAGE_ENABLED', true),
+    /** Spoilage rates per tick (0-1, higher = faster decay) */
+    rates: {
+      food: env('SPOILAGE_RATE_FOOD', 0.03),       // -3% per tick (perishable)
+      water: env('SPOILAGE_RATE_WATER', 0.01),     // -1% per tick (slow evaporation)
+      medicine: env('SPOILAGE_RATE_MEDICINE', 0.005), // -0.5% per tick (stable)
+      battery: env('SPOILAGE_RATE_BATTERY', 0.002),   // -0.2% per tick (very stable)
+      material: env('SPOILAGE_RATE_MATERIAL', 0),     // No decay
+      tool: env('SPOILAGE_RATE_TOOL', 0),             // No decay
+    } as Record<string, number>,
+    /** Minimum quantity before item is removed (prevents fractional items) */
+    removalThreshold: env('SPOILAGE_REMOVAL_THRESHOLD', 0.5),
   },
 
   // ---------------------------------------------------------------------------
@@ -397,8 +458,8 @@ export const CONFIG = {
   // Agent Spawning (Scarcity Mode)
   // ---------------------------------------------------------------------------
   agent: {
-    /** Starting balance for new agents (increased for economy bootstrap) */
-    startingBalance: env('AGENT_STARTING_BALANCE', 100),
+    /** Starting balance for new agents (reduced to force resource gathering) */
+    startingBalance: env('AGENT_STARTING_BALANCE', 20),
     /** Starting hunger for new agents (comfortable start) */
     startingHunger: env('AGENT_STARTING_HUNGER', 80),
     /** Starting energy for new agents (comfortable start) */

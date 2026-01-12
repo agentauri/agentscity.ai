@@ -119,8 +119,24 @@ export async function handleGather(
     };
   }
 
-  // Harvest the resource
-  const actualGathered = await harvestResource(targetSpawn.id, quantity);
+  // Phase 5: Cooperation Threshold (Sugarscape CT)
+  // Rich spawns require multiple agents to fully harvest
+  const groupGatherConfig = GLOBAL_CONFIG.cooperation.groupGather;
+  const otherAgentsHere = await countAgentsAtPosition(agent.id, agent.x, agent.y);
+  const isRichSpawn = targetSpawn.currentAmount > groupGatherConfig.richSpawnThreshold;
+  let maxGatherLimit = quantity;
+  let groupGatherNote = '';
+
+  if (groupGatherConfig.enabled && isRichSpawn) {
+    if (otherAgentsHere + 1 < groupGatherConfig.minAgentsForRich) {
+      // Solo agent at rich spawn - limited gathering
+      maxGatherLimit = Math.min(quantity, groupGatherConfig.soloMaxFromRich);
+      groupGatherNote = ` (RICH SPAWN: need ${groupGatherConfig.minAgentsForRich}+ agents to fully harvest, solo max: ${groupGatherConfig.soloMaxFromRich})`;
+    }
+  }
+
+  // Harvest the resource (with cooperation threshold applied)
+  const actualGathered = await harvestResource(targetSpawn.id, maxGatherLimit);
 
   if (actualGathered === 0) {
     return {
@@ -129,16 +145,28 @@ export async function handleGather(
     };
   }
 
-  // Apply cooperation bonus (more agents nearby = better efficiency)
-  const otherAgentsHere = await countAgentsAtPosition(agent.id, agent.x, agent.y);
-  const cooperationMultiplier = getCooperationMultiplier(otherAgentsHere);
-  const bonusGathered = Math.floor(actualGathered * cooperationMultiplier);
+  // Apply cooperation bonus/penalty (more agents nearby = better efficiency, alone = penalty)
+  // Note: otherAgentsHere was already counted above for cooperation threshold check
+  let efficiencyMultiplier = getCooperationMultiplier(otherAgentsHere);
+
+  // Phase 5: Group bonus for rich spawns when cooperating
+  if (groupGatherConfig.enabled && isRichSpawn && otherAgentsHere + 1 >= groupGatherConfig.minAgentsForRich) {
+    efficiencyMultiplier *= groupGatherConfig.groupBonus;
+    groupGatherNote = ` (GROUP BONUS: +${Math.round((groupGatherConfig.groupBonus - 1) * 100)}% efficiency with ${otherAgentsHere + 1} agents!)`;
+  }
+
+  // Solo penalty: if no other agents nearby, reduce efficiency
+  if (otherAgentsHere === 0 && GLOBAL_CONFIG.cooperation.enabled) {
+    efficiencyMultiplier *= GLOBAL_CONFIG.cooperation.solo.gatherEfficiencyModifier;
+  }
+
+  const finalGathered = Math.floor(actualGathered * efficiencyMultiplier);
 
   // Convert resource type to inventory item type
   const itemType = RESOURCE_TO_ITEM[targetSpawn.resourceType] || targetSpawn.resourceType;
 
-  // Add to inventory (with cooperation bonus applied)
-  await addToInventory(agent.id, itemType, bonusGathered);
+  // Add to inventory (with cooperation bonus/penalty applied)
+  await addToInventory(agent.id, itemType, finalGathered);
 
   // Calculate actual energy and hunger cost (based on what was actually gathered)
   const actualEnergyCost = CONFIG.energyCostPerUnit * actualGathered;
@@ -146,14 +174,19 @@ export async function handleGather(
   const newEnergy = agent.energy - actualEnergyCost;
   const newHunger = Math.max(0, agent.hunger - actualHungerCost);
 
-  // Store memory of gathering (include cooperation bonus info if applicable)
-  const coopNote = bonusGathered > actualGathered
-    ? ` (cooperation bonus: +${bonusGathered - actualGathered})`
-    : '';
+  // Store memory of gathering (include cooperation bonus/penalty info if applicable)
+  let coopNote = groupGatherNote; // Start with group gather note if set
+  if (!coopNote) {
+    if (finalGathered > actualGathered) {
+      coopNote = ` (cooperation bonus: +${finalGathered - actualGathered})`;
+    } else if (finalGathered < actualGathered) {
+      coopNote = ` (solo penalty: -${actualGathered - finalGathered})`;
+    }
+  }
   await storeMemory({
     agentId: agent.id,
     type: 'action',
-    content: `Gathered ${bonusGathered}x ${targetSpawn.resourceType} at (${agent.x}, ${agent.y})${coopNote}. Spawn has ${targetSpawn.currentAmount - actualGathered} remaining.`,
+    content: `Gathered ${finalGathered}x ${targetSpawn.resourceType} at (${agent.x}, ${agent.y})${coopNote}. Spawn has ${targetSpawn.currentAmount - actualGathered} remaining.`,
     importance: 5,
     emotionalValence: 0.4,
     x: agent.x,
@@ -179,13 +212,16 @@ export async function handleGather(
           resourceType: targetSpawn.resourceType,
           itemType,
           amountRequested: quantity,
-          amountGathered: bonusGathered, // With cooperation bonus applied
+          amountGathered: finalGathered, // With cooperation bonus applied
           baseAmountGathered: actualGathered,
-          cooperationMultiplier,
+          cooperationMultiplier: efficiencyMultiplier,
           otherAgentsNearby: otherAgentsHere,
           spawnRemainingAmount: targetSpawn.currentAmount - actualGathered,
           energyCost: actualEnergyCost,
           hungerCost: actualHungerCost,
+          // Phase 5: Group gather info
+          isRichSpawn,
+          soloLimitApplied: maxGatherLimit < quantity,
           newEnergy,
           newHunger,
         },

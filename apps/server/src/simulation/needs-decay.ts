@@ -22,7 +22,7 @@
 
 import { v4 as uuid } from 'uuid';
 import { updateAgent, killAgent } from '../db/queries/agents';
-import { getInventoryItem, removeFromInventory } from '../db/queries/inventory';
+import { getInventoryItem, removeFromInventory, getAgentInventory, updateInventoryQuantity } from '../db/queries/inventory';
 import type { Agent } from '../db/schema';
 import type { WorldEvent } from '../cache/pubsub';
 import { getRuntimeConfig } from '../config';
@@ -514,5 +514,116 @@ export async function applyCurrencyDecay(
     decayAmount: appliedDecay,
     applied: true,
     event,
+  };
+}
+
+// =============================================================================
+// Item Spoilage System (Fase 3)
+// =============================================================================
+// Perishable items decay over time - this creates urgency to trade/consume
+// and prevents hoarding. Food decays fastest, materials don't decay.
+
+export interface SpoilageResult {
+  agentId: string;
+  spoiledItems: Array<{
+    itemType: string;
+    previousQuantity: number;
+    newQuantity: number;
+    spoiledAmount: number;
+    removed: boolean;
+  }>;
+  events: WorldEvent[];
+}
+
+/**
+ * Apply item spoilage to an agent's inventory.
+ * Called every tick - items decay based on their type.
+ *
+ * @param agent - The agent whose inventory to decay
+ * @param tick - Current simulation tick
+ * @returns Spoilage result with events for spoiled items
+ */
+export async function applyItemSpoilage(
+  agent: Agent,
+  tick: number
+): Promise<SpoilageResult> {
+  const config = getRuntimeConfig();
+  const spoilageConfig = config.spoilage;
+
+  // If spoilage is disabled, return empty result
+  if (!spoilageConfig.enabled) {
+    return {
+      agentId: agent.id,
+      spoiledItems: [],
+      events: [],
+    };
+  }
+
+  // Dead agents don't have inventory decay (their items are... gone)
+  if (agent.state === 'dead') {
+    return {
+      agentId: agent.id,
+      spoiledItems: [],
+      events: [],
+    };
+  }
+
+  const spoiledItems: SpoilageResult['spoiledItems'] = [];
+  const events: WorldEvent[] = [];
+
+  // Get agent's inventory
+  const inventory = await getAgentInventory(agent.id);
+
+  for (const item of inventory) {
+    const spoilageRate = spoilageConfig.rates[item.itemType] ?? 0;
+
+    // Skip items that don't spoil
+    if (spoilageRate === 0) continue;
+
+    // Calculate spoilage
+    const spoiledAmount = item.quantity * spoilageRate;
+    const newQuantity = item.quantity - spoiledAmount;
+
+    // Check if item should be removed (below threshold)
+    const removed = newQuantity < spoilageConfig.removalThreshold;
+
+    if (spoiledAmount > 0) {
+      // Update or remove the item
+      if (removed) {
+        await updateInventoryQuantity(agent.id, item.itemType, 0);
+      } else {
+        await updateInventoryQuantity(agent.id, item.itemType, Math.floor(newQuantity));
+      }
+
+      spoiledItems.push({
+        itemType: item.itemType,
+        previousQuantity: item.quantity,
+        newQuantity: removed ? 0 : Math.floor(newQuantity),
+        spoiledAmount,
+        removed,
+      });
+    }
+  }
+
+  // Generate event if any items spoiled
+  if (spoiledItems.length > 0) {
+    events.push({
+      id: uuid(),
+      type: 'items_spoiled',
+      tick,
+      timestamp: Date.now(),
+      agentId: agent.id,
+      payload: {
+        spoiledItems,
+        totalItemsSpoiled: spoiledItems.length,
+        message: 'Perishable items have decayed. Trade or consume items quickly to avoid waste.',
+      },
+    });
+  }
+
+  return {
+    agentId: agent.id,
+    spoiledItems,
+    events,
   };
 }

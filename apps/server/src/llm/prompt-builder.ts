@@ -275,7 +275,98 @@ export function buildObservationPrompt(
         const trustLabel = rel.trustScore > 20 ? 'trusted' : rel.trustScore < -20 ? 'distrusted' : 'neutral';
         relInfo = ` - ${trustLabel} (${rel.interactionCount} interactions)`;
       }
-      lines.push(`- ${agent.id.slice(0, 8)} at (${agent.x}, ${agent.y}) [${agent.state}]${relInfo}`);
+      const distance = Math.abs(obs.self.x - agent.x) + Math.abs(obs.self.y - agent.y);
+      const proximity = distance <= 3 ? ' (within cooperation range)' : '';
+      // Phase 4: Show inventory for close agents to enable trade
+      let inventoryInfo = '';
+      if (agent.inventory && agent.inventory.length > 0) {
+        const items = agent.inventory.map(i => `${i.quantity}x ${i.type}`).join(', ');
+        inventoryInfo = ` | Inventory: [${items}]`;
+      }
+      lines.push(`- ${agent.id.slice(0, 8)} at (${agent.x}, ${agent.y}) [${agent.state}]${relInfo}${proximity}${inventoryInfo}`);
+    }
+
+    // Cooperation Opportunities section - show benefits of nearby agents
+    const nearbyCount = obs.nearbyAgents.filter(a => {
+      const dist = Math.abs(obs.self.x - a.x) + Math.abs(obs.self.y - a.y);
+      return dist <= 5;
+    }).length;
+
+    if (nearbyCount > 0) {
+      lines.push('', '### COOPERATION OPPORTUNITIES');
+      lines.push(`${nearbyCount} agent(s) nearby - cooperation gives BONUSES:`);
+      lines.push('- GATHERING together: +25-75% resource yield');
+      lines.push('- PUBLIC WORK together: +20-60% payment');
+      lines.push('- FORAGING together: Higher success rate');
+      lines.push('- TRADING: Better prices than shelter buy (no markup)');
+      lines.push('Working ALONE reduces your earnings by 40-50%!');
+    }
+
+    // Phase 4: Trade Opportunities - highlight specific trade possibilities
+    const tradeableAgents = obs.nearbyAgents.filter(a => {
+      const dist = Math.abs(obs.self.x - a.x) + Math.abs(obs.self.y - a.y);
+      return dist <= 3 && a.inventory && a.inventory.length > 0;
+    });
+
+    if (tradeableAgents.length > 0) {
+      lines.push('', '### 💰 TRADE OPPORTUNITIES');
+      lines.push('Trading is BETTER than buying from shelter (no 10% markup, no travel cost):');
+
+      for (const trader of tradeableAgents) {
+        const rel = obs.relationships?.[trader.id];
+        const trustBonus = rel && rel.trustScore > 20 ? ' (TRUSTED: +20% bonus!)' : '';
+
+        // Check what they have that we might need
+        const theirFood = trader.inventory?.find(i => i.type === 'food');
+        const theirMedicine = trader.inventory?.find(i => i.type === 'medicine');
+        const theirWater = trader.inventory?.find(i => i.type === 'water');
+
+        // Check what we have that they might need (surplus)
+        const ourFood = obs.inventory?.find(i => i.type === 'food');
+        const ourMedicine = obs.inventory?.find(i => i.type === 'medicine');
+
+        const opportunities: string[] = [];
+
+        // They have food and we're hungry or have surplus other items
+        if (theirFood && theirFood.quantity > 0) {
+          if (obs.self.hunger < 60) {
+            opportunities.push(`They have ${theirFood.quantity}x food (YOU NEED FOOD!)`);
+          } else {
+            opportunities.push(`They have ${theirFood.quantity}x food`);
+          }
+        }
+
+        // They have medicine and we're low health
+        if (theirMedicine && theirMedicine.quantity > 0) {
+          if (obs.self.health < 70) {
+            opportunities.push(`They have ${theirMedicine.quantity}x medicine (YOU NEED HEALING!)`);
+          } else {
+            opportunities.push(`They have ${theirMedicine.quantity}x medicine`);
+          }
+        }
+
+        // They have water
+        if (theirWater && theirWater.quantity > 0) {
+          opportunities.push(`They have ${theirWater.quantity}x water`);
+        }
+
+        // We have surplus to offer
+        if (ourFood && ourFood.quantity >= 3) {
+          opportunities.push(`You have surplus food (${ourFood.quantity}x) to trade`);
+        }
+        if (ourMedicine && ourMedicine.quantity >= 2) {
+          opportunities.push(`You have surplus medicine (${ourMedicine.quantity}x) to trade`);
+        }
+
+        if (opportunities.length > 0) {
+          lines.push(`- ${trader.id.slice(0, 8)}${trustBonus}:`);
+          for (const opp of opportunities) {
+            lines.push(`  → ${opp}`);
+          }
+        }
+      }
+
+      lines.push('TIP: Trade directly to get items WITHOUT paying shelter prices!');
     }
   }
 
@@ -307,11 +398,22 @@ export function buildObservationPrompt(
   // Nearby resource spawns (new scientific model)
   if (obs.nearbyResourceSpawns && obs.nearbyResourceSpawns.length > 0) {
     lines.push('', '### Nearby Resource Spawns');
+    const richThreshold = CONFIG.cooperation.groupGather.richSpawnThreshold;
+    const minAgents = CONFIG.cooperation.groupGather.minAgentsForRich;
+    const soloMax = CONFIG.cooperation.groupGather.soloMaxFromRich;
+
     for (const spawn of obs.nearbyResourceSpawns) {
       const distance = Math.abs(obs.self.x - spawn.x) + Math.abs(obs.self.y - spawn.y);
       const atSpawn = distance === 0 ? ' YOU ARE HERE' : ` (${distance} tiles away)`;
       const emoji = getResourceEmoji(spawn.resourceType);
-      lines.push(`- ${emoji} ${spawn.resourceType} at (${spawn.x}, ${spawn.y}) - ${spawn.currentAmount}/${spawn.maxAmount} available${atSpawn}`);
+
+      // Phase 5: Mark rich spawns that require cooperation
+      let richNote = '';
+      if (spawn.currentAmount > richThreshold) {
+        richNote = ` [RICH SPAWN: need ${minAgents}+ agents, solo max ${soloMax}]`;
+      }
+
+      lines.push(`- ${emoji} ${spawn.resourceType} at (${spawn.x}, ${spawn.y}) - ${spawn.currentAmount}/${spawn.maxAmount} available${atSpawn}${richNote}`);
     }
   }
 

@@ -208,6 +208,9 @@ export const resourceSpawns = pgTable('resource_spawns', {
   currentAmount: integer('current_amount').notNull().default(10),
   regenRate: real('regen_rate').notNull().default(0.5), // Amount regenerated per tick
 
+  // Discovery mechanics (Phase 5: Social Incentives)
+  discovered: boolean('discovered').notNull().default(true), // Hidden resources require information sharing
+
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('resource_spawns_tenant_idx').on(table.tenantId),
