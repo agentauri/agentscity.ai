@@ -1,6 +1,6 @@
 # SimAgents Roadmap
 
-> Last updated: 2026-01-12
+> Last updated: 2026-01-13
 
 ## Current Status
 
@@ -15,6 +15,8 @@
 | 4 | Advanced Features | ✅ Complete | 2025-12-29 |
 | 5 | Research Platform | ✅ Complete | 2026-01-02 |
 | 6 | Employment System | ✅ Complete | 2026-01-11 |
+| 7 | Cooperative Puzzle Game | ✅ Complete | 2026-01-13 |
+| 8 | User Authentication | ✅ Complete | 2026-01-13 |
 
 ---
 
@@ -80,6 +82,33 @@ Perishable items decay each tick, encouraging consumption and trade:
 - Materials and tools do not decay
 
 > See: [PRD Section 41-42](docs/PRD.md)
+
+### Phase 7: Cooperative Puzzle Game (Fragment Chase)
+Collaborative puzzle system inspired by Babylon research:
+- **6 Puzzle Actions**: `join_puzzle`, `leave_puzzle`, `share_fragment`, `form_team`, `join_team`, `submit_solution`
+- **Puzzle Types**: coordinates (find x,y), password (reconstruct string), logic (combine constraints)
+- **Focus Lock**: Agents in puzzles can only perform puzzle-related actions
+- **Staking Mechanism**: Entry requires CITY stake; prize pool distributed to winners
+- **Team Formation**: Agents can form teams to share fragments and solve together
+- **Anti Free-Riding**: Contribution scoring ensures active participants get rewards
+
+#### Fragment Chase Mechanics
+- Automatic puzzle generation (10% chance per tick when <2 active games, ≥3 agents alive)
+- Fragments distributed to participants; no single agent has complete solution
+- Teams share fragments to reconstruct the puzzle solution
+- Winner takes prize pool (sum of all stakes + base prize)
+
+> See: [PRD Section 43](docs/PRD.md)
+
+### Phase 8: User Authentication (OAuth)
+Secure authentication system for web platform:
+- **OAuth Providers**: Google and GitHub sign-in
+- **JWT Tokens**: Access tokens (15m) + refresh tokens (30d)
+- **Encrypted API Keys**: AES-256-GCM encryption for user LLM API keys
+- **Session Management**: Secure httpOnly cookies for refresh tokens
+- **Conditional Auth**: Optional in development, required in production
+
+> See: [PRD Section 44](docs/PRD.md)
 
 ---
 

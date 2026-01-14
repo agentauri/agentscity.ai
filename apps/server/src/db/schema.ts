@@ -1093,3 +1093,249 @@ export type NewLocation = NewShelter;
 // Phase 2: Prompt Inspector types
 export type PromptLog = typeof promptLogs.$inferSelect;
 export type NewPromptLog = typeof promptLogs.$inferInsert;
+
+// =============================================================================
+// PUZZLE GAMES (Fragment Chase - Collaborative Game)
+// =============================================================================
+
+export const puzzleGames = pgTable('puzzle_games', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Game definition
+  gameType: varchar('game_type', { length: 50 }).notNull(), // 'coordinates', 'password', 'map', 'logic'
+  status: varchar('status', { length: 20 }).notNull().default('open'), // 'open', 'active', 'completed', 'expired'
+
+  // Solution (encrypted)
+  solution: text('solution').notNull(),
+  solutionHash: varchar('solution_hash', { length: 128 }),
+
+  // Economics
+  prizePool: real('prize_pool').notNull().default(0),
+  entryStake: real('entry_stake').notNull().default(5), // CITY required
+
+  // Participation limits
+  maxParticipants: integer('max_participants').notNull().default(10),
+  minParticipants: integer('min_participants').notNull().default(2),
+  fragmentCount: integer('fragment_count').notNull().default(5),
+
+  // Timing
+  createdAtTick: bigint('created_at_tick', { mode: 'number' }).notNull(),
+  startsAtTick: bigint('starts_at_tick', { mode: 'number' }),
+  endsAtTick: bigint('ends_at_tick', { mode: 'number' }),
+
+  // Winner
+  winnerId: uuid('winner_id'), // Team or agent UUID
+
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('puzzle_games_tenant_idx').on(table.tenantId),
+  index('puzzle_games_status_idx').on(table.status),
+  index('puzzle_games_tick_idx').on(table.createdAtTick),
+]);
+
+// =============================================================================
+// PUZZLE TEAMS (Team formation for collaboration)
+// =============================================================================
+
+export const puzzleTeams = pgTable('puzzle_teams', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  gameId: uuid('game_id').notNull().references(() => puzzleGames.id, { onDelete: 'cascade' }),
+  leaderId: uuid('leader_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 100 }),
+  totalStake: real('total_stake').notNull().default(0),
+  status: varchar('status', { length: 20 }).notNull().default('forming'), // 'forming', 'active', 'won', 'lost'
+  createdAtTick: bigint('created_at_tick', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('puzzle_teams_game_idx').on(table.gameId),
+  index('puzzle_teams_leader_idx').on(table.leaderId),
+  index('puzzle_teams_status_idx').on(table.status),
+]);
+
+// =============================================================================
+// PUZZLE FRAGMENTS (Distributed information pieces)
+// =============================================================================
+
+export const puzzleFragments = pgTable('puzzle_fragments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  gameId: uuid('game_id').notNull().references(() => puzzleGames.id, { onDelete: 'cascade' }),
+  fragmentIndex: integer('fragment_index').notNull(),
+  content: text('content').notNull(), // Fragment content (encrypted per owner)
+  hint: varchar('hint', { length: 255 }), // Non-revealing hint
+  ownerId: uuid('owner_id').references(() => agents.id, { onDelete: 'set null' }),
+  originalOwnerId: uuid('original_owner_id').references(() => agents.id, { onDelete: 'set null' }),
+  sharedWith: jsonb('shared_with').notNull().default([]), // Array of agentIds
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('puzzle_fragments_game_idx').on(table.gameId),
+  index('puzzle_fragments_owner_idx').on(table.ownerId),
+  index('puzzle_fragments_original_owner_idx').on(table.originalOwnerId),
+  uniqueIndex('puzzle_fragments_game_index_idx').on(table.gameId, table.fragmentIndex),
+]);
+
+// =============================================================================
+// PUZZLE PARTICIPANTS (Agents in a game)
+// =============================================================================
+
+export const puzzleParticipants = pgTable('puzzle_participants', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  gameId: uuid('game_id').notNull().references(() => puzzleGames.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  teamId: uuid('team_id').references(() => puzzleTeams.id, { onDelete: 'set null' }),
+  stakedAmount: real('staked_amount').notNull().default(0),
+  contributionScore: real('contribution_score').notNull().default(0),
+  fragmentsReceived: integer('fragments_received').notNull().default(0),
+  fragmentsShared: integer('fragments_shared').notNull().default(0),
+  attemptsMade: integer('attempts_made').notNull().default(0),
+  joinedAtTick: bigint('joined_at_tick', { mode: 'number' }).notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('active'), // 'active', 'left', 'banned'
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('puzzle_participants_game_idx').on(table.gameId),
+  index('puzzle_participants_agent_idx').on(table.agentId),
+  index('puzzle_participants_team_idx').on(table.teamId),
+  index('puzzle_participants_status_idx').on(table.status),
+  uniqueIndex('puzzle_participants_game_agent_idx').on(table.gameId, table.agentId),
+]);
+
+// =============================================================================
+// PUZZLE ATTEMPTS (Solution submission history)
+// =============================================================================
+
+export const puzzleAttempts = pgTable('puzzle_attempts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  gameId: uuid('game_id').notNull().references(() => puzzleGames.id, { onDelete: 'cascade' }),
+  submitterId: uuid('submitter_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  teamId: uuid('team_id').references(() => puzzleTeams.id, { onDelete: 'set null' }),
+  attemptedSolution: text('attempted_solution').notNull(),
+  isCorrect: boolean('is_correct').notNull().default(false),
+  submittedAtTick: bigint('submitted_at_tick', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('puzzle_attempts_game_idx').on(table.gameId),
+  index('puzzle_attempts_submitter_idx').on(table.submitterId),
+  index('puzzle_attempts_team_idx').on(table.teamId),
+  index('puzzle_attempts_tick_idx').on(table.submittedAtTick),
+]);
+
+// Puzzle Game types
+export type PuzzleGame = typeof puzzleGames.$inferSelect;
+export type NewPuzzleGame = typeof puzzleGames.$inferInsert;
+export type PuzzleTeam = typeof puzzleTeams.$inferSelect;
+export type NewPuzzleTeam = typeof puzzleTeams.$inferInsert;
+export type PuzzleFragment = typeof puzzleFragments.$inferSelect;
+export type NewPuzzleFragment = typeof puzzleFragments.$inferInsert;
+export type PuzzleParticipant = typeof puzzleParticipants.$inferSelect;
+export type NewPuzzleParticipant = typeof puzzleParticipants.$inferInsert;
+export type PuzzleAttempt = typeof puzzleAttempts.$inferSelect;
+export type NewPuzzleAttempt = typeof puzzleAttempts.$inferInsert;
+
+// =============================================================================
+// USER AUTHENTICATION (Platform users, separate from simulation agents)
+// =============================================================================
+
+/**
+ * Users table for platform authentication.
+ * Supports both email/password and OAuth authentication.
+ */
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }), // Nullable for OAuth users
+
+  // OAuth fields
+  oauthProvider: varchar('oauth_provider', { length: 20 }), // 'google', 'github', etc.
+  oauthId: varchar('oauth_id', { length: 255 }),
+
+  // Profile
+  displayName: varchar('display_name', { length: 100 }),
+  avatarUrl: text('avatar_url'),
+
+  // Status
+  isVerified: boolean('is_verified').notNull().default(false),
+  isActive: boolean('is_active').notNull().default(true),
+
+  // Timestamps
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+}, (table) => [
+  index('users_email_idx').on(table.email),
+  // uniqueIndex only on rows where oauth fields are present
+]);
+
+/**
+ * Sessions table for JWT refresh token management.
+ * Stores only the hash of refresh tokens for security.
+ */
+export const sessions = pgTable('sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  refreshTokenHash: varchar('refresh_token_hash', { length: 128 }).notNull(),
+
+  // Session metadata
+  userAgent: text('user_agent'),
+  ipAddress: varchar('ip_address', { length: 45 }), // IPv6 compatible
+
+  // Expiration
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+
+  // Timestamps
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('sessions_user_id_idx').on(table.userId),
+  index('sessions_token_hash_idx').on(table.refreshTokenHash),
+  index('sessions_expires_idx').on(table.expiresAt),
+]);
+
+// =============================================================================
+// USER LLM KEYS (Encrypted API keys for LLM providers)
+// =============================================================================
+
+/**
+ * Encrypted storage format for API keys.
+ * Uses AES-256-GCM with envelope encryption.
+ */
+export interface EncryptedKeyData {
+  ciphertext: string;  // Base64 encoded
+  iv: string;          // Base64 encoded
+  authTag: string;     // Base64 encoded
+  salt: string;        // Base64 encoded
+  version: number;     // For key rotation support
+}
+
+/**
+ * User LLM Keys table for encrypted storage of API keys.
+ * Keys are encrypted with AES-256-GCM using envelope encryption.
+ */
+export const userLlmKeys = pgTable('user_llm_keys', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  provider: varchar('provider', { length: 20 }).notNull(), // 'anthropic', 'openai', etc.
+
+  // Encrypted key data
+  encryptedKey: jsonb('encrypted_key').notNull().$type<EncryptedKeyData>(),
+
+  // Metadata (not encrypted)
+  keyPrefix: varchar('key_prefix', { length: 20 }), // 'sk-a...xyz'
+  lastUsed: timestamp('last_used', { withTimezone: true }),
+  lastValidated: timestamp('last_validated', { withTimezone: true }),
+  isValid: boolean('is_valid').notNull().default(true),
+
+  // Timestamps
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  uniqueIndex('user_llm_keys_user_provider_idx').on(table.userId, table.provider),
+  index('user_llm_keys_user_id_idx').on(table.userId),
+]);
+
+// User Auth types
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+export type Session = typeof sessions.$inferSelect;
+export type NewSession = typeof sessions.$inferInsert;
+export type UserLlmKey = typeof userLlmKeys.$inferSelect;
+export type NewUserLlmKey = typeof userLlmKeys.$inferInsert;

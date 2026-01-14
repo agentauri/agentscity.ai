@@ -35,6 +35,7 @@ import { CONFIG } from '../config';
 import type { Agent, NewAgent } from '../db/schema';
 import { random, randomBelow, randomChoice, resetRNG } from '../utils/random';
 import { processScheduledShocks, type ShockResult } from './shocks';
+import { processPuzzleEngineTick } from './puzzle-engine';
 
 // Role update interval (every N ticks)
 const ROLE_UPDATE_INTERVAL = 20;
@@ -190,6 +191,20 @@ class TickEngine {
       logger.error('Error processing shocks', error);
     }
 
+    // Process puzzle engine (Fragment Chase)
+    try {
+      const puzzleResults = await processPuzzleEngineTick(tick, null);
+      if (puzzleResults.newGames.length > 0 || puzzleResults.activatedGames.length > 0) {
+        logger.info(`Puzzle engine tick ${tick}`, {
+          newGames: puzzleResults.newGames.length,
+          activatedGames: puzzleResults.activatedGames.length,
+          expiredCount: puzzleResults.expiredCount,
+        });
+      }
+    } catch (error) {
+      logger.error('Error processing puzzle engine', error);
+    }
+
     // Get all alive agents
     const agents = await getAliveAgents();
 
@@ -206,6 +221,7 @@ class TickEngine {
       // Emit events for agent actions
       for (const result of agentResults) {
         if (result.actionResult?.success && result.decision) {
+          // Emit the decision event (what the agent chose to do)
           const actionEvent: WorldEvent = {
             id: uuid(),
             type: `agent_${result.decision.action}` as string,
@@ -222,6 +238,14 @@ class TickEngine {
           };
           allEvents.push(actionEvent);
           await publishEvent(actionEvent);
+
+          // Also emit the result events from the action handler (e.g., agent_gathered, agent_consumed)
+          if (result.actionResult.events && result.actionResult.events.length > 0) {
+            for (const handlerEvent of result.actionResult.events) {
+              allEvents.push(handlerEvent);
+              await publishEvent(handlerEvent);
+            }
+          }
         }
       }
     } catch (error) {

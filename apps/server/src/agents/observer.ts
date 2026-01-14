@@ -26,6 +26,12 @@ import type {
   NearbyJobOffer,
   ActiveEmployment,
   OpenJobOffer,
+  // Puzzle System
+  ActivePuzzleGame,
+  MyPuzzleFragment,
+  MyPuzzleTeam,
+  NearbyPuzzlePlayer,
+  PuzzleParticipationInfo,
 } from '../llm/types';
 import { buildAvailableActions } from '../llm/prompt-builder';
 import { getVisibleAgents, getAdjacentPositions, getDirection, getDistance } from '../world/grid';
@@ -42,6 +48,14 @@ import {
   getActiveEmploymentsForEmployer,
   getOpenJobOffersByEmployer,
 } from '../db/queries/employment';
+import {
+  getAgentPuzzleContext,
+  isAgentInActivePuzzle,
+  getFragmentsOwnedByAgent,
+  getTeamMembers,
+  getParticipant,
+  getAgentActivePuzzleGame,
+} from '../db/queries/puzzles';
 import { CONFIG } from '../config';
 import { isBlackoutActive } from '../simulation/shocks';
 import { isPersonalityEnabled, isValidPersonality, type PersonalityTrait } from './personalities';
@@ -359,6 +373,107 @@ export async function buildObservation(
     expiresAtTick: o.expiresAtTick ?? undefined,
   }));
 
+  // Puzzle Game System
+  let activePuzzleGames: ActivePuzzleGame[] = [];
+  let myPuzzleFragments: MyPuzzleFragment[] = [];
+  let myPuzzleTeam: MyPuzzleTeam | undefined;
+  let puzzleParticipation: PuzzleParticipationInfo | undefined;
+  let inActivePuzzle = false;
+  let nearbyPuzzlePlayers: NearbyPuzzlePlayer[] = [];
+
+  if (CONFIG.puzzle.enabled && isValidUuid) {
+    // Check if agent is in an active puzzle
+    inActivePuzzle = await isAgentInActivePuzzle(agent.id);
+
+    // Get full puzzle context for the agent
+    const puzzleContext = await getAgentPuzzleContext(agent.id, agent.tenantId);
+
+    // Map active puzzle games from context
+    activePuzzleGames = puzzleContext.activePuzzleGames.map((game) => ({
+      id: game.id,
+      gameType: game.gameType,
+      status: game.status,
+      prizePool: game.prizePool,
+      entryStake: game.entryStake,
+      participantCount: game.participantCount,
+      fragmentsNeeded: game.fragmentCount,
+      ticksRemaining: (game.endsAtTick || tick) - tick,
+      isParticipating: game.isParticipating,
+    }));
+
+    // If agent is in a puzzle, get detailed participation info
+    if (puzzleContext.currentGameId) {
+      const currentGame = puzzleContext.activePuzzleGames.find(
+        (g) => g.id === puzzleContext.currentGameId
+      );
+      const participation = await getParticipant(agent.id, puzzleContext.currentGameId);
+
+      if (currentGame && participation) {
+        puzzleParticipation = {
+          gameId: puzzleContext.currentGameId,
+          gameType: currentGame.gameType,
+          stakedAmount: participation.stakedAmount,
+          fragmentsReceived: participation.fragmentsReceived,
+          fragmentsShared: participation.fragmentsShared,
+          contributionScore: participation.contributionScore,
+          teamId: participation.teamId ?? undefined,
+          ticksRemaining: (currentGame.endsAtTick || tick) - tick,
+        };
+
+        // Map agent's fragments
+        myPuzzleFragments = puzzleContext.myFragments.map((f) => ({
+          id: f.id,
+          gameId: f.gameId,
+          gameType: currentGame.gameType,
+          fragmentIndex: f.fragmentIndex,
+          hint: f.hint ?? undefined,
+          content: f.content,
+          sharedWith: (f.sharedWith as string[]) || [],
+        }));
+
+        // Map agent's team info
+        if (puzzleContext.myTeam) {
+          const members = await getTeamMembers(puzzleContext.myTeam.id);
+          myPuzzleTeam = {
+            id: puzzleContext.myTeam.id,
+            gameId: puzzleContext.myTeam.gameId,
+            name: puzzleContext.myTeam.name || `Team-${puzzleContext.myTeam.leaderId.slice(0, 8)}`,
+            leaderId: puzzleContext.myTeam.leaderId,
+            memberCount: members.length,
+            totalStake: puzzleContext.myTeam.totalStake,
+            isLeader: puzzleContext.myTeam.leaderId === agent.id,
+          };
+        }
+
+        // Find nearby agents who are in puzzles
+        const nearbyAgentIds = nearbyAgents.map((a) => a.id);
+        for (const nearbyAgentId of nearbyAgentIds) {
+          const nearbyAgentInPuzzle = await isAgentInActivePuzzle(nearbyAgentId);
+          if (nearbyAgentInPuzzle) {
+            const nearbyAgent = nearbyAgents.find((a) => a.id === nearbyAgentId);
+            const nearbyAgentGame = await getAgentActivePuzzleGame(nearbyAgentId);
+            const nearbyParticipation = nearbyAgentGame
+              ? await getParticipant(nearbyAgentId, nearbyAgentGame.id)
+              : undefined;
+            const rel = relationships[nearbyAgentId];
+
+            if (nearbyAgent) {
+              const nearbyFragments = await getFragmentsOwnedByAgent(nearbyAgentId);
+              nearbyPuzzlePlayers.push({
+                agentId: nearbyAgentId,
+                distance: Math.abs(agent.x - nearbyAgent.x) + Math.abs(agent.y - nearbyAgent.y),
+                trustLevel: rel?.trustScore ?? 0,
+                fragmentCount: nearbyFragments.length,
+                inSameGame: nearbyAgentGame?.id === puzzleContext.currentGameId,
+                teamId: nearbyParticipation?.teamId ?? undefined,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Build available actions based on current state
   const observation: AgentObservation = {
     tick,
@@ -382,6 +497,13 @@ export async function buildObservation(
     nearbyJobOffers,
     activeEmployments,
     myJobOffers,
+    // Puzzle Game System
+    activePuzzleGames: activePuzzleGames.length > 0 ? activePuzzleGames : undefined,
+    myPuzzleFragments: myPuzzleFragments.length > 0 ? myPuzzleFragments : undefined,
+    myPuzzleTeam,
+    puzzleParticipation,
+    inActivePuzzle: inActivePuzzle || undefined,
+    nearbyPuzzlePlayers: nearbyPuzzlePlayers.length > 0 ? nearbyPuzzlePlayers : undefined,
   };
 
   // Add available actions

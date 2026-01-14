@@ -9,11 +9,11 @@ export function ViewToggle() {
   const { toggleViewMode } = useEditorStore();
 
   return (
-    <div className="flex items-center gap-1 bg-city-surface border border-city-border rounded-lg p-0.5">
+    <div className="flex items-center h-8 bg-city-surface border border-city-border rounded-lg p-0.5">
       <button
         type="button"
         onClick={() => viewMode !== '2d' && toggleViewMode()}
-        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 flex items-center gap-1.5 ${
+        className={`h-full px-3 text-xs font-medium rounded-md transition-all duration-200 flex items-center gap-1.5 ${
           viewMode === '2d'
             ? 'bg-city-accent text-white shadow-sm'
             : 'text-city-text-muted hover:text-city-text hover:bg-city-surface-hover'
@@ -43,7 +43,7 @@ export function ViewToggle() {
       <button
         type="button"
         onClick={() => viewMode !== 'isometric' && toggleViewMode()}
-        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 flex items-center gap-1.5 ${
+        className={`h-full px-3 text-xs font-medium rounded-md transition-all duration-200 flex items-center gap-1.5 ${
           viewMode === 'isometric'
             ? 'bg-city-accent text-white shadow-sm'
             : 'text-city-text-muted hover:text-city-text hover:bg-city-surface-hover'

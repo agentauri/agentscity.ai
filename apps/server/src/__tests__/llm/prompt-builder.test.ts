@@ -266,9 +266,9 @@ describe('buildObservationPrompt', () => {
       });
       const prompt = buildObservationPrompt(obs);
       expect(prompt).toContain('Nearby Resource Spawns');
-      expect(prompt).toContain('[FOOD]');
+      // Resource spawns now show "(FREE - no currency needed!)" and amount as "X FREE!"
       expect(prompt).toContain('food');
-      expect(prompt).toContain('15/20');
+      expect(prompt).toContain('15 FREE!');
     });
 
     test('shows energy spawn with label', () => {
@@ -310,7 +310,9 @@ describe('buildObservationPrompt', () => {
         ],
       });
       const prompt = buildObservationPrompt(obs);
-      expect(prompt).toContain('YOU ARE HERE');
+      // When at spawn location, shows "HERE!" indicator with available amount
+      expect(prompt).toContain('**FOOD HERE!**');
+      expect(prompt).toContain('USE GATHER NOW');
     });
   });
 

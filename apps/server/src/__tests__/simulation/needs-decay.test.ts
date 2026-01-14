@@ -16,7 +16,10 @@
  * - foodHungerRestore: 50
  */
 
-import { describe, expect, test, mock, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, test, mock, beforeEach, afterEach, afterAll } from 'bun:test';
+
+// Restore mocks after all tests to not affect other test files
+afterAll(() => mock.restore());
 import type { Agent } from '../../db/schema';
 
 // Mock database calls before importing the module

@@ -6534,6 +6534,240 @@ Social actions added to fallback logic:
 
 ---
 
+## 43. Cooperative Puzzle Game: Fragment Chase
+
+### 43.1 Overview
+
+Fragment Chase is a collaborative puzzle game inspired by [Babylon](https://arxiv.org/html/2508.02076v1) research on multi-agent cooperation. The game requires agents to cooperate by sharing information fragments to solve puzzles that no single agent can solve alone.
+
+**Design Philosophy**:
+- **Information Asymmetry**: Each agent receives only part of the solution
+- **Cooperation Required**: Solving requires sharing fragments with others
+- **Stake-Based Commitment**: Entry requires CITY stake, creating real opportunity cost
+- **Focus Lock**: Agents in puzzles cannot perform other actions (move, gather, trade)
+
+### 43.2 Game Flow
+
+```
+1. PUZZLE CREATION
+   └─ Engine generates puzzle + divides into K fragments
+   └─ Defines prize pool (stakes + base bonus)
+
+2. REGISTRATION (Open Phase)
+   └─ Agents choose to join by staking CITY
+   └─ Each participant receives 1 encrypted fragment
+
+3. COORDINATION (Active Phase)
+   └─ Agents find each other (signals, share_info)
+   └─ Form teams (leader + members)
+   └─ Share fragments (trade or share_fragment)
+
+4. SUBMISSION
+   └─ Team/solo attempts solution
+   └─ Unlimited attempts until deadline
+
+5. RESOLUTION
+   └─ Engine verifies solution
+   └─ Distributes prizes to winners
+   └─ Updates trust/reputation
+```
+
+### 43.3 Puzzle Types
+
+| Type | Description | Fragments | Difficulty |
+|------|-------------|-----------|------------|
+| **coordinates** | Find position (x,y) from hints | 2-3 | Easy |
+| **password** | Reconstruct string from parts | 3-5 | Medium |
+| **logic** | Combine constraints for number | 5 | Hard |
+
+### 43.4 Actions
+
+| Action | Description |
+|--------|-------------|
+| `join_puzzle` | Join game by staking CITY |
+| `leave_puzzle` | Abandon game (lose 50% stake) |
+| `share_fragment` | Share your fragment with another player |
+| `form_team` | Create a team (become leader) |
+| `join_team` | Join an existing team |
+| `submit_solution` | Attempt to solve the puzzle |
+
+### 43.5 Focus Lock Mechanism
+
+When an agent joins a puzzle, they enter **Focus Lock** mode:
+
+**Blocked Actions**: `move`, `gather`, `forage`, `work`, `trade`, `buy`, `sleep`, etc.
+
+**Allowed Actions**:
+- `share_fragment` - Share fragments with teammates
+- `form_team` / `join_team` - Team organization
+- `submit_solution` - Attempt solution
+- `leave_puzzle` - Abandon (with penalty)
+- `consume` - Emergency survival only
+
+**Rationale**:
+1. Creates real opportunity cost for participation
+2. Forces dedication to the puzzle
+3. Prevents multi-tasking abuse
+4. Aligns with Babylon's dedicated round concept
+
+**Mitigations**:
+- Needs decay reduced 50% during puzzles
+- Puzzles have maximum duration (100 ticks)
+- Warning in prompt if hunger/energy critical before joining
+
+### 43.6 Anti Free-Riding (MAC-SPGG Inspired)
+
+Contribution scoring prevents agents from joining without participating:
+
+```typescript
+scoring: {
+  fragmentShared: 0.3,      // +30% per fragment shared
+  fragmentVerified: 0.2,    // +20% if fragment useful
+  teamSupport: 0.15,        // +15% for support actions
+  earlyContribution: 0.1,   // +10% for early contributions
+  submissionContrib: 0.25,  // +25% if part of winning submission
+}
+
+freeRiderPenalty: {
+  minContributionThreshold: 0.15, // Min 15% contribution for prize
+  penaltyFactor: 0.5,             // Lose 50% stake if below
+  reputationImpact: -20,          // Trust penalty
+}
+```
+
+### 43.7 Database Schema
+
+```sql
+-- Core tables for Fragment Chase
+puzzle_games         -- Game instances (type, status, solution, prize_pool)
+puzzle_fragments     -- Distributed information pieces
+puzzle_participants  -- Agents in games (stake, contribution_score)
+puzzle_teams         -- Team formation
+puzzle_attempts      -- Solution submission history
+```
+
+### 43.8 Configuration
+
+```typescript
+puzzle: {
+  enabled: true,
+  defaultEntryStake: 5,       // CITY required
+  roundDurationTicks: 100,    // Max duration
+  registrationWindow: 20,     // Ticks to register
+  prizeDistribution: {
+    winnerShare: 0.6,         // 60% to winner
+    contributorShare: 0.3,    // 30% by contribution
+    creatorShare: 0.1,        // 10% to game creator
+  },
+}
+```
+
+### 43.9 Scientific Value
+
+**Research Questions**:
+1. Do agents spontaneously form teams without explicit incentives?
+2. What sharing strategies emerge (fair vs exploitative)?
+3. How do trust relationships affect fragment sharing?
+4. What's the free-rider rate with/without penalties?
+
+---
+
+## 44. User Authentication (OAuth)
+
+### 44.1 Overview
+
+Secure authentication system for the web platform using OAuth providers, eliminating the need for password management while providing encrypted storage for user API keys.
+
+### 44.2 OAuth Providers
+
+| Provider | Status | User Data |
+|----------|--------|-----------|
+| **Google** | ✅ Supported | email, name, avatar |
+| **GitHub** | ✅ Supported | email, name, avatar |
+
+### 44.3 Token Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ACCESS TOKEN                                                │
+│  - Short-lived (15 minutes)                                  │
+│  - JWT signed with HS256                                     │
+│  - Stored in frontend memory (not localStorage)              │
+└─────────────────────────────────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  REFRESH TOKEN                                               │
+│  - Long-lived (30 days)                                      │
+│  - httpOnly + secure + sameSite cookie                      │
+│  - Hash stored in sessions table                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 44.4 API Key Encryption
+
+User LLM API keys are encrypted at rest using AES-256-GCM:
+
+```typescript
+encryptedKey: {
+  ciphertext: string,  // Base64 encrypted key
+  iv: string,          // Initialization vector
+  authTag: string,     // Authentication tag
+  salt: string,        // For key derivation
+  version: number,     // For key rotation
+}
+```
+
+**Security Properties**:
+- Master key in environment variable (never in database)
+- Context binding: userId + provider in AAD
+- Key derivation with scrypt (N=16384, r=8, p=1)
+
+### 44.5 Conditional Authentication
+
+| Environment | Auth Required | Behavior |
+|-------------|---------------|----------|
+| **Development** | Optional | Simulation works without login |
+| **Production** | Required | Must sign in before starting |
+
+Detection based on hostname: localhost/127.0.0.1/192.168.x.x = development
+
+### 44.6 API Endpoints
+
+```
+GET  /api/auth/providers     # Check available providers
+GET  /api/auth/google        # Initiate Google OAuth
+GET  /api/auth/github        # Initiate GitHub OAuth
+GET  /api/auth/google/callback  # Handle Google callback
+GET  /api/auth/github/callback  # Handle GitHub callback
+POST /api/auth/refresh       # Refresh access token
+GET  /api/auth/me            # Get current user
+POST /api/auth/logout        # Clear session
+```
+
+### 44.7 Database Schema
+
+```sql
+users (
+  id, email, password_hash,
+  oauth_provider, oauth_id,
+  display_name, avatar_url,
+  is_verified, is_active
+)
+
+sessions (
+  id, user_id, refresh_token_hash,
+  user_agent, ip_address, expires_at
+)
+
+user_llm_keys (
+  id, user_id, provider,
+  encrypted_key, key_prefix,
+  last_used, last_validated, is_valid
+)
+```
+
+---
+
 ## Conclusion
 
 Sim Agents v2.0 represents a comprehensive platform for studying emergent AI agent behavior at scale. The additions in this version provide:
@@ -6554,6 +6788,8 @@ Sim Agents v2.0 represents a comprehensive platform for studying emergent AI age
 14. **Advanced Visualization**: Heatmaps, filters, and social graph for pattern analysis (§40)
 15. **Employment System**: Contract-based labor market replacing magic currency creation (§41)
 16. **Social Interactions**: Cooperation incentives making social behavior more rewarding (§42)
+17. **Cooperative Puzzle Game**: Fragment Chase - information sharing puzzles for emergent cooperation (§43)
+18. **User Authentication**: OAuth-based auth with encrypted API key storage (§44)
 
 > **Core Philosophy Reminder**: *"From City Simulation to Digital Darwinism Laboratory"*
 >

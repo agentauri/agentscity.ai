@@ -43,7 +43,14 @@ export type ActionType =
   | 'claim_escrow'
   | 'quit_job'
   | 'fire_worker'
-  | 'cancel_job_offer';
+  | 'cancel_job_offer'
+  // Puzzle Game System (Fragment Chase)
+  | 'join_puzzle'
+  | 'leave_puzzle'
+  | 'share_fragment'
+  | 'form_team'
+  | 'join_team'
+  | 'submit_solution';
 
 // =============================================================================
 // Action Parameters
@@ -216,6 +223,36 @@ export interface CancelJobOfferParams {
   jobOfferId: string; // ID of the job offer to cancel
 }
 
+// Puzzle Game System Parameters (Fragment Chase)
+
+export interface JoinPuzzleParams {
+  gameId: string; // ID of the puzzle game to join
+  stakeAmount?: number; // Optional custom stake (default: game's entry stake)
+}
+
+export interface LeavePuzzleParams {
+  gameId: string; // ID of the puzzle game to leave
+}
+
+export interface ShareFragmentParams {
+  fragmentId: string; // ID of the fragment to share
+  targetAgentId: string; // Agent to share with
+}
+
+export interface FormTeamParams {
+  gameId: string; // ID of the puzzle game
+  teamName?: string; // Optional team name
+}
+
+export interface JoinTeamParams {
+  teamId: string; // ID of the team to join
+}
+
+export interface SubmitSolutionParams {
+  gameId: string; // ID of the puzzle game
+  solution: string; // The proposed solution
+}
+
 export type ActionParams =
   | MoveParams
   | BuyParams
@@ -245,7 +282,14 @@ export type ActionParams =
   | ClaimEscrowParams
   | QuitJobParams
   | FireWorkerParams
-  | CancelJobOfferParams;
+  | CancelJobOfferParams
+  // Puzzle Game System
+  | JoinPuzzleParams
+  | LeavePuzzleParams
+  | ShareFragmentParams
+  | FormTeamParams
+  | JoinTeamParams
+  | SubmitSolutionParams;
 
 // =============================================================================
 // Action Intent

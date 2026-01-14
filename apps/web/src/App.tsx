@@ -12,7 +12,7 @@
 import { useEffect, useCallback, useState } from 'react';
 import { useSSE } from './hooks/useSSE';
 import { useWorldStore, useAgents, useEvents } from './stores/world';
-import { useEditorStore, useAppMode, useIsAnalyticsMode, useIsReplayMode, useIsPromptsMode, useIsPaused, useViewMode } from './stores/editor';
+import { useEditorStore, useAppMode, useIsAnalyticsMode, useIsReplayMode, useIsPromptsMode, useIsPuzzlesMode, useIsPaused, useViewMode } from './stores/editor';
 import { useWorldControl } from './hooks/useWorldControl';
 import { Layout } from './components/Layout';
 import { ScientificCanvas } from './components/Canvas/ScientificCanvas';
@@ -27,11 +27,15 @@ import { MobileNav, type MobileView } from './components/MobileNav';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { ReplayPage } from './pages/ReplayPage';
 import { PromptsPage } from './pages/PromptsPage';
+import { PuzzlesPage } from './pages/PuzzlesPage';
 import { useReplayStore } from './stores/replay';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SocialGraphView, SocialGraphButton } from './components/SocialGraph';
 import { MobileAgentList, MobileDecisionLog } from './components/Mobile';
 import { ConfigPanel } from './components/ConfigPanel';
+import { AuthModal, UserMenu } from './components/Auth';
+import { initializeAuth, useIsAuthenticated } from './stores/auth';
+import { isAuthRequired } from './utils/env';
 
 export default function App() {
   const { status, connect, disconnect } = useSSE();
@@ -43,6 +47,7 @@ export default function App() {
   const isAnalyticsMode = useIsAnalyticsMode();
   const isReplayMode = useIsReplayMode();
   const isPromptsMode = useIsPromptsMode();
+  const isPuzzlesMode = useIsPuzzlesMode();
   const isPaused = useIsPaused();
   const { enterReplayMode, exitReplayMode } = useReplayStore();
   const [hasSynced, setHasSynced] = useState(false);
@@ -51,12 +56,24 @@ export default function App() {
   const [mobileView, setMobileView] = useState<MobileView>('canvas');
   // Config panel state
   const [showConfigPanel, setShowConfigPanel] = useState(false);
+  // Auth modal state
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const agents = useAgents();
   const events = useEvents();
   const aliveAgents = agents.filter(a => a.health > 0);
+  const isAuthenticated = useIsAuthenticated();
 
   // World control hook for BE API
   const { fetchState, start, pause, resume, reset, fetchRecentEvents } = useWorldControl();
+
+  // Initialize auth on mount (try to restore session from refresh token)
+  useEffect(() => {
+    initializeAuth().then((success) => {
+      if (success) {
+        console.log('[App] Auth session restored');
+      }
+    });
+  }, []);
 
   // Sync with backend on mount (restore running simulation)
   useEffect(() => {
@@ -104,6 +121,12 @@ export default function App() {
 
   // Handle start simulation - scientific mode (no city layout needed)
   const handleStartSimulation = useCallback(async () => {
+    // In production, require authentication before starting
+    if (isAuthRequired() && !isAuthenticated) {
+      setShowAuthModal(true);
+      return;
+    }
+
     // Call backend to start simulation (spawns resources, shelters, agents automatically)
     const result = await start();
     if (!result.success) {
@@ -124,7 +147,7 @@ export default function App() {
 
     // Connect SSE after setting state
     connect();
-  }, [setMode, start, setWorldState, connect]);
+  }, [setMode, start, setWorldState, connect, isAuthenticated]);
 
   // Handle reset - calls BE to reset DB
   const handleReset = useCallback(async () => {
@@ -215,7 +238,7 @@ export default function App() {
         {/* Config button */}
         <button
           onClick={() => setShowConfigPanel(!showConfigPanel)}
-          className={`p-2 rounded-lg border transition-colors ${
+          className={`w-8 h-8 flex items-center justify-center rounded-lg border transition-colors ${
             showConfigPanel
               ? 'bg-blue-600 border-blue-500 text-white'
               : 'bg-city-surface border-city-border hover:bg-city-border text-city-text'
@@ -241,7 +264,7 @@ export default function App() {
         {/* Prompts Gallery button */}
         <button
           onClick={() => setMode('prompts')}
-          className="p-2 rounded-lg bg-city-surface border border-city-border hover:bg-city-border text-city-text transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-lg bg-city-surface border border-city-border hover:bg-city-border text-city-text transition-colors"
           title="Prompt Gallery"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -249,11 +272,20 @@ export default function App() {
           </svg>
         </button>
 
+        {/* Puzzle Games button */}
+        <button
+          onClick={() => setMode('puzzles')}
+          className="w-8 h-8 flex items-center justify-center rounded-lg bg-city-surface border border-city-border hover:bg-city-border text-city-text transition-colors"
+          title="Puzzle Games"
+        >
+          <span className="text-sm">🧩</span>
+        </button>
+
         {/* Replay button (only in simulation mode) */}
         {mode === 'simulation' && (
           <button
             onClick={handleEnterReplay}
-            className="p-2 rounded-lg bg-city-surface border border-city-border hover:bg-city-border text-city-text transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-city-surface border border-city-border hover:bg-city-border text-city-text transition-colors"
             title="Time Travel Replay"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -269,7 +301,11 @@ export default function App() {
           onPause={handlePause}
           onResume={handleResume}
           onOpenConfig={() => setShowConfigPanel(true)}
+          onSignInClick={() => setShowAuthModal(true)}
         />
+
+        {/* User Menu / Sign In */}
+        <UserMenu onSignInClick={() => setShowAuthModal(true)} />
       </div>
     </div>
   );
@@ -297,6 +333,15 @@ export default function App() {
     return (
       <ErrorBoundary sectionName="Prompts" onError={handleError}>
         <PromptsPage />
+      </ErrorBoundary>
+    );
+  }
+
+  // Puzzles mode - render full-screen puzzles page with error boundary
+  if (isPuzzlesMode) {
+    return (
+      <ErrorBoundary sectionName="Puzzles" onError={handleError}>
+        <PuzzlesPage />
       </ErrorBoundary>
     );
   }
@@ -360,6 +405,12 @@ export default function App() {
 
   return (
     <>
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+      />
+
       {/* Social Graph Overlay */}
       <SocialGraphView />
 

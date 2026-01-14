@@ -11,7 +11,7 @@
  * - Work fail (employer cannot pay)
  */
 
-import { describe, expect, test, mock, beforeEach } from 'bun:test';
+import { describe, expect, test, mock, beforeEach, afterAll } from 'bun:test';
 import { v4 as uuid } from 'uuid';
 import type { Agent, Employment } from '../../db/schema';
 import type { ActionIntent, WorkParams } from '../../actions/types';
@@ -28,7 +28,6 @@ const mockGetAgentById = mock((_id: string) => Promise.resolve(null as Agent | n
 const mockUpdateAgentBalance = mock(() => Promise.resolve());
 const mockStoreMemory = mock(() => Promise.resolve({ id: 'test-memory' }));
 const mockUpdateRelationshipTrust = mock(() => Promise.resolve());
-const mockDbExecute = mock(() => Promise.resolve());
 
 mock.module('../../db/queries/employment', () => ({
   getOldestActiveEmployment: mockGetOldestActiveEmployment,
@@ -43,12 +42,6 @@ mock.module('../../db/queries/agents', () => ({
 mock.module('../../db/queries/memories', () => ({
   storeMemory: mockStoreMemory,
   updateRelationshipTrust: mockUpdateRelationshipTrust,
-}));
-
-mock.module('../../db', () => ({
-  db: {
-    execute: mockDbExecute,
-  },
 }));
 
 // Import after mocking
@@ -133,6 +126,11 @@ function createWorkIntent(duration = 1, agentId = WORKER_ID): ActionIntent<WorkP
 }
 
 describe('handleWork', () => {
+  afterAll(() => {
+    // Restore all mocked modules to allow other tests to use real implementations
+    mock.restore();
+  });
+
   beforeEach(() => {
     // Reset mocks
     mockGetOldestActiveEmployment.mockClear();
@@ -141,7 +139,6 @@ describe('handleWork', () => {
     mockUpdateAgentBalance.mockClear();
     mockStoreMemory.mockClear();
     mockUpdateRelationshipTrust.mockClear();
-    mockDbExecute.mockClear();
 
     // Default setups
     mockGetOldestActiveEmployment.mockImplementation(() => Promise.resolve(createMockEmployment()));
@@ -254,8 +251,6 @@ describe('handleWork', () => {
       const result = await handleWork(intent, agent);
 
       expect(result.success).toBe(true);
-      // Verify db update called via sql mock
-      expect(mockDbExecute).toHaveBeenCalled();
       // Verify completion logic
       expect(mockUpdateEmploymentStatus).toHaveBeenCalledWith(EMPLOYMENT_ID, 'completed', 10);
       expect(mockUpdateRelationshipTrust).toHaveBeenCalledTimes(2); // Both parties trust gain

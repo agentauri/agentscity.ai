@@ -636,6 +636,127 @@ export const CONFIG = {
   },
 
   // ---------------------------------------------------------------------------
+  // Puzzle Games (Fragment Chase - Collaborative Game)
+  // ---------------------------------------------------------------------------
+  puzzle: {
+    /** Enable puzzle game system */
+    enabled: envBool('PUZZLE_ENABLED', true),
+
+    // Staking
+    /** Default entry stake in CITY */
+    defaultEntryStake: env('PUZZLE_DEFAULT_STAKE', 5),
+    /** Minimum entry stake in CITY */
+    minEntryStake: env('PUZZLE_MIN_STAKE', 2),
+    /** Maximum entry stake in CITY */
+    maxEntryStake: env('PUZZLE_MAX_STAKE', 50),
+
+    // Contribution Scoring (for reward distribution)
+    scoring: {
+      /** Score bonus per fragment shared */
+      fragmentShared: env('PUZZLE_SCORE_FRAGMENT_SHARED', 0.3),
+      /** Score bonus if fragment was useful to solution */
+      fragmentVerified: env('PUZZLE_SCORE_FRAGMENT_VERIFIED', 0.2),
+      /** Score bonus for team support actions */
+      teamSupport: env('PUZZLE_SCORE_TEAM_SUPPORT', 0.15),
+      /** Score bonus for early contributions */
+      earlyContribution: env('PUZZLE_SCORE_EARLY', 0.1),
+      /** Score bonus for being part of winning submission */
+      submissionContrib: env('PUZZLE_SCORE_SUBMISSION', 0.25),
+    },
+
+    // Anti Free-Riding (MAC-SPGG inspired)
+    freeRiderPenalty: {
+      /** Minimum contribution threshold to receive prize (15%) */
+      minContributionThreshold: env('PUZZLE_MIN_CONTRIB_THRESHOLD', 0.15),
+      /** Penalty factor for low contributors (50% stake loss) */
+      penaltyFactor: env('PUZZLE_PENALTY_FACTOR', 0.5),
+      /** Trust reputation impact for free-riding */
+      reputationImpact: env('PUZZLE_REPUTATION_IMPACT', -20),
+    },
+
+    // Timing
+    /** Round duration in ticks (~100 minutes with 1-minute ticks) */
+    roundDurationTicks: env('PUZZLE_ROUND_DURATION', 100),
+    /** Registration window in ticks (first 20 ticks to join) */
+    registrationWindow: env('PUZZLE_REGISTRATION_WINDOW', 20),
+
+    // Prize Distribution
+    prizeDistribution: {
+      /** Share for winning team/agent (60%) */
+      winnerShare: env('PUZZLE_WINNER_SHARE', 0.6),
+      /** Share distributed by contribution (30%) */
+      contributorShare: env('PUZZLE_CONTRIBUTOR_SHARE', 0.3),
+      /** Share for game creator (10%) */
+      creatorShare: env('PUZZLE_CREATOR_SHARE', 0.1),
+    },
+
+    // Team Settings
+    /** Maximum team size */
+    maxTeamSize: env('PUZZLE_MAX_TEAM_SIZE', 5),
+    /** Leader bonus multiplier (20% extra) */
+    leaderBonusMultiplier: env('PUZZLE_LEADER_BONUS', 1.2),
+    /** Minimum team size for consensus requirement */
+    consensusMinTeamSize: env('PUZZLE_CONSENSUS_MIN_TEAM', 3),
+    /** Consensus ratio required (50%) */
+    consensusRatio: env('PUZZLE_CONSENSUS_RATIO', 0.5),
+
+    // Focus Lock (agents blocked during puzzle)
+    focusLock: {
+      /** Needs decay reduction while in puzzle (50%) */
+      needsDecayReduction: env('PUZZLE_NEEDS_DECAY_REDUCTION', 0.5),
+      /** Allowed actions during puzzle */
+      allowedActions: [
+        'share_fragment',
+        'form_team',
+        'join_team',
+        'submit_solution',
+        'leave_puzzle',
+        'consume',
+      ] as const,
+    },
+
+    // Puzzle Types
+    puzzleTypes: {
+      /** Coordinate puzzle (find x,y from hints) */
+      coordinates: {
+        minFragments: 2,
+        maxFragments: 3,
+        difficulty: 'easy',
+      },
+      /** Password puzzle (reconstruct string from parts) */
+      password: {
+        minFragments: 3,
+        maxFragments: 5,
+        difficulty: 'medium',
+      },
+      /** Map puzzle (assemble map sections) */
+      map: {
+        minFragments: 4,
+        maxFragments: 6,
+        difficulty: 'medium',
+      },
+      /** Logic puzzle (combine constraints) */
+      logic: {
+        minFragments: 5,
+        maxFragments: 8,
+        difficulty: 'hard',
+      },
+    },
+
+    // Energy costs
+    energyCosts: {
+      /** Energy cost to submit a solution attempt */
+      submitAttempt: env('PUZZLE_ENERGY_SUBMIT', 3),
+      /** Energy cost to share a fragment */
+      shareFragment: env('PUZZLE_ENERGY_SHARE', 1),
+      /** Energy cost to form a team */
+      formTeam: env('PUZZLE_ENERGY_FORM_TEAM', 2),
+      /** Energy cost to leave puzzle early */
+      leavePuzzle: env('PUZZLE_ENERGY_LEAVE', 5),
+    },
+  },
+
+  // ---------------------------------------------------------------------------
   // Telemetry (OpenTelemetry)
   // ---------------------------------------------------------------------------
   telemetry: {
@@ -665,6 +786,7 @@ export type MemoryConfig = typeof CONFIG.memory;
 export type ExperimentConfig = typeof CONFIG.experiment;
 export type PromptInspectorConfig = typeof CONFIG.promptInspector;
 export type TelemetryConfig = typeof CONFIG.telemetry;
+export type PuzzleConfig = typeof CONFIG.puzzle;
 
 // =============================================================================
 // Runtime Test Mode
@@ -812,6 +934,13 @@ interface RuntimeConfigOverrides {
     };
     removalThreshold?: number;
   };
+  // Puzzle config
+  puzzle?: {
+    enabled?: boolean;
+    defaultEntryStake?: number;
+    roundDurationTicks?: number;
+    registrationWindow?: number;
+  };
 }
 
 let runtimeOverrides: RuntimeConfigOverrides = {};
@@ -904,6 +1033,13 @@ export function getRuntimeConfig(): RuntimeConfigOverrides & typeof CONFIG {
       },
       removalThreshold: runtimeOverrides.spoilage?.removalThreshold ?? CONFIG.spoilage.removalThreshold,
     },
+    puzzle: {
+      ...CONFIG.puzzle,
+      enabled: runtimeOverrides.puzzle?.enabled ?? CONFIG.puzzle.enabled,
+      defaultEntryStake: runtimeOverrides.puzzle?.defaultEntryStake ?? CONFIG.puzzle.defaultEntryStake,
+      roundDurationTicks: runtimeOverrides.puzzle?.roundDurationTicks ?? CONFIG.puzzle.roundDurationTicks,
+      registrationWindow: runtimeOverrides.puzzle?.registrationWindow ?? CONFIG.puzzle.registrationWindow,
+    },
   };
 }
 
@@ -943,6 +1079,13 @@ export function setRuntimeConfig(updates: RuntimeConfigOverrides): void {
       rates: { ...runtimeOverrides.spoilage?.rates, ...updates.spoilage.rates },
       removalThreshold: updates.spoilage.removalThreshold ?? runtimeOverrides.spoilage?.removalThreshold,
     } : runtimeOverrides.spoilage,
+    // Puzzle config
+    puzzle: updates.puzzle ? {
+      enabled: updates.puzzle.enabled ?? runtimeOverrides.puzzle?.enabled,
+      defaultEntryStake: updates.puzzle.defaultEntryStake ?? runtimeOverrides.puzzle?.defaultEntryStake,
+      roundDurationTicks: updates.puzzle.roundDurationTicks ?? runtimeOverrides.puzzle?.roundDurationTicks,
+      registrationWindow: updates.puzzle.registrationWindow ?? runtimeOverrides.puzzle?.registrationWindow,
+    } : runtimeOverrides.puzzle,
   };
 }
 

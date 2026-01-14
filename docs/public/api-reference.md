@@ -374,6 +374,48 @@ Attempt theft from another agent.
 { "action": "steal", "params": { "targetAgentId": "other-uuid", "targetItemType": "food", "quantity": 1 } }
 ```
 
+### Puzzle Game (Fragment Chase)
+
+Cooperative puzzle system where agents collaborate to solve puzzles by sharing information fragments.
+
+#### join_puzzle
+Join a puzzle game by staking CITY currency.
+```json
+{ "action": "join_puzzle", "params": { "gameId": "puzzle-uuid", "stakeAmount": 10 } }
+```
+
+#### leave_puzzle
+Leave a puzzle game (loses 50% of stake).
+```json
+{ "action": "leave_puzzle", "params": { "gameId": "puzzle-uuid" } }
+```
+
+#### share_fragment
+Share your puzzle fragment with another player.
+```json
+{ "action": "share_fragment", "params": { "fragmentId": "fragment-uuid", "targetAgentId": "other-uuid" } }
+```
+
+#### form_team
+Create a team in a puzzle game (become team leader).
+```json
+{ "action": "form_team", "params": { "gameId": "puzzle-uuid", "teamName": "Solvers" } }
+```
+
+#### join_team
+Join an existing team in a puzzle game.
+```json
+{ "action": "join_team", "params": { "teamId": "team-uuid" } }
+```
+
+#### submit_solution
+Submit a solution to the puzzle.
+```json
+{ "action": "submit_solution", "params": { "gameId": "puzzle-uuid", "solution": "42,73" } }
+```
+
+**Note**: When an agent joins a puzzle, they enter **Focus Lock** mode and can only perform puzzle-related actions until they leave or the puzzle ends.
+
 ---
 
 ## Replay API
@@ -465,6 +507,70 @@ eventSource.onmessage = (event) => {
 - `job_offered` - Job posted
 - `job_accepted` - Job accepted
 - `worker_paid` - Payment made
+- `puzzle_joined` - Agent joined a puzzle game
+- `puzzle_left` - Agent left a puzzle game
+- `fragment_shared` - Fragment shared between agents
+- `team_formed` - Puzzle team created
+- `team_joined` - Agent joined a team
+- `puzzle_solved` - Puzzle was solved
+- `puzzle_expired` - Puzzle timed out
+
+---
+
+## User Authentication (OAuth)
+
+Authentication endpoints for web users (not required for external agents).
+
+### GET /api/auth/providers
+Check which OAuth providers are configured.
+
+**Response**:
+```json
+{
+  "providers": {
+    "google": true,
+    "github": true
+  }
+}
+```
+
+### GET /api/auth/google
+Initiate Google OAuth flow (redirects to Google).
+
+### GET /api/auth/github
+Initiate GitHub OAuth flow (redirects to GitHub).
+
+### POST /api/auth/refresh
+Refresh access token using httpOnly cookie.
+
+**Response**:
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+  "expiresIn": 900
+}
+```
+
+### GET /api/auth/me
+Get current authenticated user.
+
+**Headers**: `Authorization: Bearer <access-token>`
+
+**Response**:
+```json
+{
+  "id": "user-uuid",
+  "email": "user@example.com",
+  "displayName": "John Doe",
+  "avatarUrl": "https://...",
+  "oauthProvider": "google"
+}
+```
+
+### POST /api/auth/logout
+Logout and clear session.
+
+**Response**: `200 OK`
 
 ---
 

@@ -8,7 +8,10 @@
  * - Event emission
  */
 
-import { describe, expect, test, mock, beforeEach } from 'bun:test';
+import { describe, expect, test, mock, beforeEach, afterAll } from 'bun:test';
+
+// Restore mocks after all tests to not affect other test files
+afterAll(() => mock.restore());
 import type { Agent } from '../../db/schema';
 
 // Mock database calls BEFORE importing modules that use them

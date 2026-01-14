@@ -36,6 +36,13 @@ import { handleClaimEscrow } from './handlers/claim-escrow';
 import { handleQuitJob } from './handlers/quit-job';
 import { handleFireWorker } from './handlers/fire-worker';
 import { handleCancelJobOffer } from './handlers/cancel-job-offer';
+// Puzzle Game System (Fragment Chase)
+import { handleJoinPuzzle } from './handlers/join-puzzle';
+import { handleLeavePuzzle } from './handlers/leave-puzzle';
+import { handleShareFragment } from './handlers/share-fragment';
+import { handleFormTeam } from './handlers/form-team';
+import { handleJoinTeam } from './handlers/join-team';
+import { handleSubmitSolution } from './handlers/submit-solution';
 
 // Action handler registry
 const handlers: Map<ActionType, ActionHandler> = new Map();
@@ -75,6 +82,13 @@ handlers.set('claim_escrow', handleClaimEscrow as ActionHandler);
 handlers.set('quit_job', handleQuitJob as ActionHandler);
 handlers.set('fire_worker', handleFireWorker as ActionHandler);
 handlers.set('cancel_job_offer', handleCancelJobOffer as ActionHandler);
+// Puzzle Game System (Fragment Chase)
+handlers.set('join_puzzle', handleJoinPuzzle as ActionHandler);
+handlers.set('leave_puzzle', handleLeavePuzzle as ActionHandler);
+handlers.set('share_fragment', handleShareFragment as ActionHandler);
+handlers.set('form_team', handleFormTeam as ActionHandler);
+handlers.set('join_team', handleJoinTeam as ActionHandler);
+handlers.set('submit_solution', handleSubmitSolution as ActionHandler);
 
 /**
  * Register a custom action handler

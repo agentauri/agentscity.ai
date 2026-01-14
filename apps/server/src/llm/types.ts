@@ -84,6 +84,20 @@ export interface AgentObservation {
   scents?: ScentTrace[];
   /** Nearby signals heard (long-range) */
   signals?: SignalHeard[];
+
+  // Puzzle Game System (Fragment Chase)
+  /** Active puzzle games available to join */
+  activePuzzleGames?: ActivePuzzleGame[];
+  /** Agent's puzzle fragments */
+  myPuzzleFragments?: MyPuzzleFragment[];
+  /** Agent's current team (if any) */
+  myPuzzleTeam?: MyPuzzleTeam;
+  /** Current puzzle participation info (if in a puzzle) */
+  puzzleParticipation?: PuzzleParticipationInfo;
+  /** Whether agent is in an active puzzle (Focus Lock) */
+  inActivePuzzle?: boolean;
+  /** Nearby agents who are in puzzles */
+  nearbyPuzzlePlayers?: NearbyPuzzlePlayer[];
 }
 
 export interface InventoryEntry {
@@ -250,6 +264,62 @@ export interface SignalHeard {
 }
 
 // =============================================================================
+// Puzzle Game System Types (Fragment Chase)
+// =============================================================================
+
+export interface ActivePuzzleGame {
+  id: string;
+  gameType: string; // 'coordinates' | 'password' | 'map' | 'logic'
+  status: string; // 'open' | 'active'
+  prizePool: number;
+  entryStake: number;
+  participantCount: number;
+  fragmentsNeeded: number;
+  ticksRemaining: number;
+  isParticipating: boolean;
+}
+
+export interface MyPuzzleFragment {
+  id: string;
+  gameId: string;
+  gameType: string;
+  fragmentIndex: number;
+  hint?: string;
+  content: string; // The actual fragment content
+  sharedWith: string[]; // Agent IDs this fragment was shared with
+}
+
+export interface MyPuzzleTeam {
+  id: string;
+  gameId: string;
+  name: string;
+  leaderId: string;
+  memberCount: number;
+  totalStake: number;
+  isLeader: boolean;
+}
+
+export interface NearbyPuzzlePlayer {
+  agentId: string;
+  distance: number;
+  trustLevel: number;
+  fragmentCount: number;
+  inSameGame: boolean;
+  teamId?: string;
+}
+
+export interface PuzzleParticipationInfo {
+  gameId: string;
+  gameType: string;
+  stakedAmount: number;
+  fragmentsReceived: number;
+  fragmentsShared: number;
+  contributionScore: number;
+  teamId?: string;
+  ticksRemaining: number;
+}
+
+// =============================================================================
 // Agent Decision (what the agent chooses to do)
 // =============================================================================
 
@@ -284,7 +354,14 @@ export type ActionParams =
   | RevokeCredentialParams
   | SpreadGossipParams
   | SpawnOffspringParams
-  | SignalParams;
+  | SignalParams
+  // Puzzle Game System
+  | JoinPuzzleParams
+  | LeavePuzzleParams
+  | ShareFragmentParams
+  | FormTeamParams
+  | JoinTeamParams
+  | SubmitSolutionParams;
 
 export interface MoveParams {
   toX: number;
@@ -418,6 +495,38 @@ export interface SpawnOffspringParams {
   partnerId?: string;
   inheritSystemPrompt?: boolean;
   mutationIntensity?: number;
+}
+
+// =============================================================================
+// Puzzle Game System Action Params
+// =============================================================================
+
+export interface JoinPuzzleParams {
+  gameId: string;
+  stakeAmount?: number;
+}
+
+export interface LeavePuzzleParams {
+  gameId: string;
+}
+
+export interface ShareFragmentParams {
+  fragmentId: string;
+  targetAgentId: string;
+}
+
+export interface FormTeamParams {
+  gameId: string;
+  teamName?: string;
+}
+
+export interface JoinTeamParams {
+  teamId: string;
+}
+
+export interface SubmitSolutionParams {
+  gameId: string;
+  solution: string;
 }
 
 // =============================================================================

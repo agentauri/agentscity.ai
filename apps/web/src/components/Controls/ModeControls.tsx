@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useEditorStore, useAppMode, useIsPaused } from '../../stores/editor';
 import { useSettingsStore, useSoundEnabled } from '../../stores/settings';
+import { useIsAuthenticated } from '../../stores/auth';
+import { isAuthRequired } from '../../utils/env';
 import { StartConfirmationModal } from './StartConfirmationModal';
 
 interface ModeControlsProps {
@@ -9,9 +11,10 @@ interface ModeControlsProps {
   onPause?: () => Promise<void>;
   onResume?: () => Promise<void>;
   onOpenConfig?: () => void;
+  onSignInClick?: () => void;
 }
 
-export function ModeControls({ onStartSimulation, onReset, onPause, onResume, onOpenConfig }: ModeControlsProps) {
+export function ModeControls({ onStartSimulation, onReset, onPause, onResume, onOpenConfig, onSignInClick }: ModeControlsProps) {
   const mode = useAppMode();
   const isPaused = useIsPaused();
   const { setMode, setPaused } = useEditorStore();
@@ -19,6 +22,10 @@ export function ModeControls({ onStartSimulation, onReset, onPause, onResume, on
   const [showStartModal, setShowStartModal] = useState(false);
   const soundEnabled = useSoundEnabled();
   const { toggleSound } = useSettingsStore();
+  const isAuthenticated = useIsAuthenticated();
+
+  // Check if auth is needed but user is not authenticated
+  const needsAuth = isAuthRequired() && !isAuthenticated;
 
   // Handle confirmed start
   const handleConfirmedStart = async () => {
@@ -52,23 +59,39 @@ export function ModeControls({ onStartSimulation, onReset, onPause, onResume, on
     return (
       <div className="flex items-center gap-1 sm:gap-2">
         {/* Mode badge - hidden on mobile */}
-        <span className="hidden sm:inline-flex px-2.5 py-1 bg-city-accent/20 text-city-accent text-xs font-medium rounded-md">
+        <span className="hidden sm:inline-flex items-center h-8 px-3 bg-city-accent/20 text-city-accent text-xs font-medium rounded-lg">
           Ready
         </span>
 
-        {/* Start button - opens confirmation modal */}
-        <button
-          type="button"
-          disabled={isLoading}
-          onClick={() => setShowStartModal(true)}
-          className="px-2.5 py-1.5 sm:px-4 bg-city-accent hover:bg-city-accent-light text-white text-[11px] sm:text-xs font-semibold rounded flex items-center gap-1 sm:gap-1.5 disabled:opacity-50"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none" className="sm:w-3 sm:h-3">
-            <polygon points="5 3 19 12 5 21 5 3" />
-          </svg>
-          <span className="hidden xs:inline">Start</span>
-          <span className="xs:hidden">Go</span>
-        </button>
+        {/* Start button - shows "Sign In" if auth required, otherwise opens confirmation modal */}
+        {needsAuth ? (
+          <button
+            type="button"
+            onClick={onSignInClick}
+            className="h-8 px-3 bg-city-accent hover:bg-city-accent-light text-white text-xs font-medium rounded-lg flex items-center gap-1.5"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+              <polyline points="10 17 15 12 10 7" />
+              <line x1="15" y1="12" x2="3" y2="12" />
+            </svg>
+            <span className="hidden xs:inline">Sign In to Start</span>
+            <span className="xs:hidden">Sign In</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() => setShowStartModal(true)}
+            className="h-8 px-3 bg-city-accent hover:bg-city-accent-light text-white text-xs font-medium rounded-lg flex items-center gap-1.5 disabled:opacity-50"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+            <span className="hidden xs:inline">Start</span>
+            <span className="xs:hidden">Go</span>
+          </button>
+        )}
 
         {/* Start Confirmation Modal */}
         <StartConfirmationModal

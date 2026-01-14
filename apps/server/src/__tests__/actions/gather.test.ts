@@ -9,7 +9,10 @@
  * - Energy cost applied
  */
 
-import { describe, expect, test, mock, beforeEach } from 'bun:test';
+import { describe, expect, test, mock, beforeEach, afterAll } from 'bun:test';
+
+// Restore mocks after all tests to not affect other test files
+afterAll(() => mock.restore());
 import type { Agent, ResourceSpawn } from '../../db/schema';
 import type { ActionIntent } from '../../actions/types';
 import type { GatherParams } from '../../actions/handlers/gather';
@@ -123,8 +126,12 @@ describe('handleGather', () => {
       mockHarvestResource.mockImplementation(() => Promise.resolve(1));
       // Mock having another agent at same position to avoid solo penalty
       // countAgentsAtPosition is local and uses getAliveAgents internally
+      // Include BOTH the test agent AND a cooperating agent
       mockGetAliveAgents.mockImplementation(() =>
-        Promise.resolve([createMockAgent({ id: 'other-agent', x: 50, y: 50 })])
+        Promise.resolve([
+          createMockAgent({ id: 'test-agent-id', x: 50, y: 50 }),
+          createMockAgent({ id: 'cooperating-agent', x: 50, y: 50 }),
+        ])
       );
     });
 

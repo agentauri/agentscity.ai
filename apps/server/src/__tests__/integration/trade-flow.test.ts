@@ -9,7 +9,7 @@
  * - Event emission
  */
 
-import { describe, expect, test, mock, beforeEach } from 'bun:test';
+import { describe, expect, test, mock, beforeEach, afterAll } from 'bun:test';
 import type { Agent } from '../../db/schema';
 import { CONFIG } from '../../config';
 
@@ -74,6 +74,11 @@ function createTradeIntent(
     timestamp: Date.now(),
   };
 }
+
+// Restore mocks after all tests complete to not affect other test files
+afterAll(() => {
+  mock.restore();
+});
 
 describe('Trade Flow - Validation', () => {
   beforeEach(() => {

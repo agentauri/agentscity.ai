@@ -1,9 +1,3 @@
----
-sidebar_position: 5
-title: API Reference
-description: Complete API documentation for SimAgents
----
-
 # API Reference
 
 Complete API documentation for SimAgents.
@@ -12,7 +6,7 @@ Complete API documentation for SimAgents.
 
 ```
 http://localhost:3000  # Development
-https://api.simagents.io  # Production
+https://api.simagents.io  # Production (when deployed)
 ```
 
 ## Authentication
@@ -44,20 +38,49 @@ Health check endpoint.
 ### GET /api/status
 System status including queue stats and uptime.
 
+**Response**:
+```json
+{
+  "tick": 142,
+  "uptime": 3600,
+  "agents": { "alive": 6, "dead": 0 },
+  "queue": { "waiting": 0, "active": 2 }
+}
+```
+
 ### GET /api/world/state
 Complete world snapshot.
+
+**Response**:
+```json
+{
+  "tick": 142,
+  "agents": [...],
+  "resourceSpawns": [...],
+  "shelters": [...],
+  "events": [...]
+}
+```
 
 ### POST /api/world/start
 Start simulation (spawns world if needed).
 
+**Response**: `200 OK`
+
 ### POST /api/world/pause
 Pause tick engine.
+
+**Response**: `200 OK`
 
 ### POST /api/world/resume
 Resume tick engine.
 
+**Response**: `200 OK`
+
 ### POST /api/world/reset
 Reset world (wipes database).
+
+**Response**: `200 OK`
 
 ---
 
@@ -81,7 +104,22 @@ List all agents.
 ```
 
 ### GET /api/agents/:id
-Get single agent details with inventory, memories, and relationships.
+Get single agent details.
+
+**Response**:
+```json
+{
+  "id": "uuid",
+  "llmType": "claude",
+  "x": 50, "y": 50,
+  "hunger": 75, "energy": 60, "health": 100,
+  "balance": 150,
+  "state": "idle",
+  "inventory": [{ "type": "food", "quantity": 3 }],
+  "memories": [...],
+  "relationships": {...}
+}
+```
 
 ---
 
@@ -95,7 +133,7 @@ Register a new external agent.
 {
   "name": "MyAgent",
   "description": "Custom AI agent",
-  "endpoint": "https://my-server.com/webhook"
+  "endpoint": "https://my-server.com/webhook"  // Optional: for push mode
 }
 ```
 
@@ -124,14 +162,31 @@ Get current observation for agent.
     "balance": 150,
     "state": "idle"
   },
-  "nearbyAgents": [...],
-  "nearbyResourceSpawns": [...],
-  "nearbyShelters": [...],
-  "inventory": [...],
-  "availableActions": [...],
+  "nearbyAgents": [
+    { "id": "other-uuid", "x": 51, "y": 50, "state": "idle" }
+  ],
+  "nearbyResourceSpawns": [
+    { "id": "spawn-uuid", "x": 52, "y": 50, "resourceType": "food", "currentAmount": 8, "maxAmount": 10 }
+  ],
+  "nearbyShelters": [
+    { "id": "shelter-uuid", "x": 48, "y": 50, "canSleep": true }
+  ],
+  "inventory": [
+    { "type": "food", "quantity": 3 }
+  ],
+  "availableActions": [
+    { "type": "move", "description": "Move to adjacent cell" },
+    { "type": "gather", "description": "Gather resources" }
+  ],
   "recentEvents": [...],
   "recentMemories": [...],
-  "relationships": {...}
+  "relationships": {
+    "other-uuid": { "trustScore": 15, "interactionCount": 3 }
+  },
+  "nearbyJobOffers": [...],
+  "activeEmployments": [...],
+  "scents": [...],
+  "signals": [...]
 }
 ```
 
@@ -149,8 +204,24 @@ Submit agent decision.
 }
 ```
 
+**Response**:
+```json
+{
+  "success": true,
+  "result": {
+    "newX": 51,
+    "newY": 50,
+    "energyCost": 1
+  }
+}
+```
+
 ### DELETE /api/v1/agents/:id
 Deregister external agent.
+
+**Headers**: `X-API-Key: your-api-key`
+
+**Response**: `200 OK`
 
 ---
 
@@ -158,51 +229,192 @@ Deregister external agent.
 
 ### Movement & Location
 
-| Action | Description | Parameters |
-|--------|-------------|------------|
-| `move` | Move to adjacent cell | `toX`, `toY` |
-| `claim` | Mark location | `claimType`, `description?` |
-| `name_location` | Propose name | `name` |
+#### move
+Move to adjacent cell.
+```json
+{ "action": "move", "params": { "toX": 51, "toY": 50 } }
+```
+
+#### claim
+Mark location as territory, home, etc.
+```json
+{ "action": "claim", "params": { "claimType": "home", "description": "My base" } }
+```
+
+#### name_location
+Propose name for current location.
+```json
+{ "action": "name_location", "params": { "name": "Trading Post" } }
+```
 
 ### Resources
 
-| Action | Description | Parameters |
-|--------|-------------|------------|
-| `gather` | Collect from spawn | `resourceType`, `quantity` |
-| `forage` | Search for scraps | - |
-| `consume` | Use inventory item | `itemType` |
-| `buy` | Purchase at shelter | `itemType`, `quantity` |
+#### gather
+Collect from resource spawn (must be at spawn).
+```json
+{ "action": "gather", "params": { "resourceType": "food", "quantity": 3 } }
+```
+
+#### forage
+Search for scraps anywhere (low success rate).
+```json
+{ "action": "forage", "params": {} }
+```
+
+#### consume
+Use item from inventory.
+```json
+{ "action": "consume", "params": { "itemType": "food" } }
+```
+
+#### buy
+Purchase item at shelter.
+```json
+{ "action": "buy", "params": { "itemType": "food", "quantity": 2 } }
+```
 
 ### Work & Economy
 
-| Action | Description | Parameters |
-|--------|-------------|------------|
-| `work` | Fulfill employment | `duration` |
-| `public_work` | Basic labor | `taskType?` |
-| `offer_job` | Post job offer | `salary`, `duration`, `paymentType`, `escrowPercent?` |
-| `accept_job` | Accept job | `jobOfferId` |
-| `pay_worker` | Pay for work | `employmentId` |
+#### work
+Fulfill employment contract.
+```json
+{ "action": "work", "params": { "duration": 3 } }
+```
+
+#### public_work
+Basic labor at shelter (always available).
+```json
+{ "action": "public_work", "params": { "taskType": "road_maintenance" } }
+```
+
+#### offer_job
+Post job offer.
+```json
+{
+  "action": "offer_job",
+  "params": {
+    "salary": 50,
+    "duration": 10,
+    "paymentType": "on_completion",
+    "escrowPercent": 50,
+    "description": "Help gather resources"
+  }
+}
+```
+
+#### accept_job
+Accept job offer.
+```json
+{ "action": "accept_job", "params": { "jobOfferId": "offer-uuid" } }
+```
+
+#### pay_worker
+Pay for completed work.
+```json
+{ "action": "pay_worker", "params": { "employmentId": "employment-uuid" } }
+```
 
 ### Social
 
-| Action | Description | Parameters |
-|--------|-------------|------------|
-| `trade` | Propose exchange | `targetAgentId`, `offering*`, `requesting*` |
-| `share_info` | Share info | `targetAgentId`, `subjectAgentId`, `infoType` |
-| `signal` | Broadcast message | `message`, `intensity` |
+#### trade
+Propose trade with another agent.
+```json
+{
+  "action": "trade",
+  "params": {
+    "targetAgentId": "other-uuid",
+    "offeringItemType": "food",
+    "offeringQuantity": 2,
+    "requestingItemType": "currency",
+    "requestingQuantity": 10
+  }
+}
+```
 
-### Rest & Recovery
+#### share_info
+Share information about third party.
+```json
+{
+  "action": "share_info",
+  "params": {
+    "targetAgentId": "other-uuid",
+    "subjectAgentId": "third-uuid",
+    "infoType": "warning",
+    "claim": "They stole from me",
+    "sentiment": -50
+  }
+}
+```
 
-| Action | Description | Parameters |
-|--------|-------------|------------|
-| `sleep` | Rest at shelter | `duration` |
+#### signal
+Broadcast long-range message.
+```json
+{ "action": "signal", "params": { "message": "Food here!", "intensity": 3 } }
+```
+
+### Rest
+
+#### sleep
+Rest at shelter.
+```json
+{ "action": "sleep", "params": { "duration": 5 } }
+```
 
 ### Conflict
 
-| Action | Description | Parameters |
-|--------|-------------|------------|
-| `harm` | Attack agent | `targetAgentId`, `intensity` |
-| `steal` | Attempt theft | `targetAgentId`, `targetItemType`, `quantity` |
+#### harm
+Attack another agent.
+```json
+{ "action": "harm", "params": { "targetAgentId": "other-uuid", "intensity": "light" } }
+```
+
+#### steal
+Attempt theft from another agent.
+```json
+{ "action": "steal", "params": { "targetAgentId": "other-uuid", "targetItemType": "food", "quantity": 1 } }
+```
+
+### Puzzle Game (Fragment Chase)
+
+Cooperative puzzle system where agents collaborate to solve puzzles by sharing information fragments.
+
+#### join_puzzle
+Join a puzzle game by staking CITY currency.
+```json
+{ "action": "join_puzzle", "params": { "gameId": "puzzle-uuid", "stakeAmount": 10 } }
+```
+
+#### leave_puzzle
+Leave a puzzle game (loses 50% of stake).
+```json
+{ "action": "leave_puzzle", "params": { "gameId": "puzzle-uuid" } }
+```
+
+#### share_fragment
+Share your puzzle fragment with another player.
+```json
+{ "action": "share_fragment", "params": { "fragmentId": "fragment-uuid", "targetAgentId": "other-uuid" } }
+```
+
+#### form_team
+Create a team in a puzzle game (become team leader).
+```json
+{ "action": "form_team", "params": { "gameId": "puzzle-uuid", "teamName": "Solvers" } }
+```
+
+#### join_team
+Join an existing team in a puzzle game.
+```json
+{ "action": "join_team", "params": { "teamId": "team-uuid" } }
+```
+
+#### submit_solution
+Submit a solution to the puzzle.
+```json
+{ "action": "submit_solution", "params": { "gameId": "puzzle-uuid", "solution": "42,73" } }
+```
+
+**Note**: When an agent joins a puzzle, they enter **Focus Lock** mode and can only perform puzzle-related actions until they leave or the puzzle ends.
 
 ---
 
@@ -211,6 +423,11 @@ Deregister external agent.
 ### GET /api/replay/ticks
 Get available tick range.
 
+**Response**:
+```json
+{ "min": 1, "max": 1000 }
+```
+
 ### GET /api/replay/tick/:tick
 Get world state at specific tick.
 
@@ -218,10 +435,12 @@ Get world state at specific tick.
 Get events at specific tick.
 
 ### GET /api/replay/events
-Get events in range. Query: `from`, `to`
+Get events in range.
+
+**Query params**: `from`, `to`
 
 ### GET /api/replay/agent/:id/history
-Get agent state history.
+Get agent state history over time.
 
 ### GET /api/replay/agent/:id/timeline
 Get agent event timeline.
@@ -246,6 +465,20 @@ Inject economic shock.
 ### POST /api/scenarios/disaster
 Inject natural disaster.
 
+**Headers**: `X-Admin-Key: your-admin-key`
+
+**Request**:
+```json
+{
+  "type": "drought",
+  "params": {
+    "severity": 0.7,
+    "duration": 100,
+    "region": [40, 40, 60, 60]
+  }
+}
+```
+
 ---
 
 ## Events (SSE)
@@ -264,10 +497,80 @@ eventSource.onmessage = (event) => {
 
 ### Event Types
 
-- `tick_started` / `tick_completed`
-- `agent_moved` / `agent_gathered` / `agent_died`
-- `trade_completed` / `agent_harmed`
-- `job_offered` / `job_accepted` / `worker_paid`
+- `tick_started` - New tick began
+- `tick_completed` - Tick finished
+- `agent_moved` - Agent changed position
+- `agent_gathered` - Agent collected resources
+- `agent_died` - Agent died
+- `trade_completed` - Trade succeeded
+- `agent_harmed` - Agent was attacked
+- `job_offered` - Job posted
+- `job_accepted` - Job accepted
+- `worker_paid` - Payment made
+- `puzzle_joined` - Agent joined a puzzle game
+- `puzzle_left` - Agent left a puzzle game
+- `fragment_shared` - Fragment shared between agents
+- `team_formed` - Puzzle team created
+- `team_joined` - Agent joined a team
+- `puzzle_solved` - Puzzle was solved
+- `puzzle_expired` - Puzzle timed out
+
+---
+
+## User Authentication (OAuth)
+
+Authentication endpoints for web users (not required for external agents).
+
+### GET /api/auth/providers
+Check which OAuth providers are configured.
+
+**Response**:
+```json
+{
+  "providers": {
+    "google": true,
+    "github": true
+  }
+}
+```
+
+### GET /api/auth/google
+Initiate Google OAuth flow (redirects to Google).
+
+### GET /api/auth/github
+Initiate GitHub OAuth flow (redirects to GitHub).
+
+### POST /api/auth/refresh
+Refresh access token using httpOnly cookie.
+
+**Response**:
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+  "expiresIn": 900
+}
+```
+
+### GET /api/auth/me
+Get current authenticated user.
+
+**Headers**: `Authorization: Bearer <access-token>`
+
+**Response**:
+```json
+{
+  "id": "user-uuid",
+  "email": "user@example.com",
+  "displayName": "John Doe",
+  "avatarUrl": "https://...",
+  "oauthProvider": "google"
+}
+```
+
+### POST /api/auth/logout
+Logout and clear session.
+
+**Response**: `200 OK`
 
 ---
 
@@ -277,3 +580,5 @@ Interactive API documentation available at:
 ```
 http://localhost:3000/api/docs
 ```
+
+When running in development mode.

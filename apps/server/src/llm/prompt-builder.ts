@@ -136,6 +136,12 @@ Respond with ONLY a JSON object. No other text. Format:
 - revoke_credential: Revoke a credential you previously issued. Params: { "credentialId": string, "reason"?: string }
 - spread_gossip: Share reputation information about a third agent with a nearby agent. Params: { "targetAgentId": string, "subjectAgentId": string, "topic": "skill"|"behavior"|"transaction"|"warning"|"recommendation", "claim": string, "sentiment": -100 to 100 }
 - spawn_offspring: Reproduce to create a new agent (requires high resources). Params: { "partnerId"?: string, "inheritSystemPrompt"?: boolean, "mutationIntensity"?: 0-1 }
+- join_puzzle: Join a puzzle game (requires stake). Params: { "gameId": string, "stakeAmount"?: number }
+- leave_puzzle: Leave a puzzle game (lose 50% of stake). Params: { "gameId": string }
+- share_fragment: Share your puzzle fragment with another player. Params: { "fragmentId": string, "targetAgentId": string }
+- form_team: Create a team in a puzzle game. Params: { "gameId": string, "teamName"?: string }
+- join_team: Join an existing team. Params: { "teamId": string }
+- submit_solution: Submit a solution to the puzzle. Params: { "gameId": string, "solution": string }
 
 ## World Model
 - Resources spawn at specific locations (food, energy, material)
@@ -541,6 +547,82 @@ export function buildObservationPrompt(
           : `on completion (${offer.escrowAmount} CITY escrow)`;
       lines.push(`- ${offer.salary} CITY for ${offer.duration} ticks (${paymentInfo})`);
     }
+  }
+
+  // Puzzle Game System (Fragment Chase)
+  if (obs.activePuzzleGames && obs.activePuzzleGames.length > 0) {
+    lines.push('', '### 🧩 Puzzle Games (Fragment Chase)');
+    lines.push('💰 **COOPERATIVE GAME**: Stake CITY to join and receive puzzle FRAGMENTS.');
+    lines.push('   Share fragments with other players to solve the puzzle together.');
+    lines.push('   Winners split the PRIZE POOL (much bigger than entry stake!)');
+    lines.push('');
+
+    for (const game of obs.activePuzzleGames) {
+      const statusIcon = game.isParticipating ? '✅ PARTICIPATING' : '🔓 OPEN';
+      const potentialProfit = game.prizePool - game.entryStake;
+      lines.push(`- [${game.gameType.toUpperCase()}] ${statusIcon}`);
+      lines.push(`  Prize: ${game.prizePool.toFixed(0)} CITY | Entry: ${game.entryStake.toFixed(0)} CITY (potential profit: +${potentialProfit.toFixed(0)} CITY)`);
+      lines.push(`  Players: ${game.participantCount}/${game.fragmentsNeeded} needed | Time left: ${game.ticksRemaining} ticks`);
+    }
+    lines.push('');
+    lines.push('TIP: Join puzzles to earn CITY! Cooperate with others to solve and win.');
+  }
+
+  // Show puzzle participation info if in a puzzle
+  if (obs.puzzleParticipation) {
+    lines.push('', '### 🎯 Your Puzzle Status');
+    lines.push(`Game: ${obs.puzzleParticipation.gameType} puzzle`);
+    lines.push(`Staked: ${obs.puzzleParticipation.stakedAmount.toFixed(0)} CITY`);
+    lines.push(`Fragments received: ${obs.puzzleParticipation.fragmentsReceived}`);
+    lines.push(`Fragments shared: ${obs.puzzleParticipation.fragmentsShared}`);
+    lines.push(`Contribution score: ${(obs.puzzleParticipation.contributionScore * 100).toFixed(0)}%`);
+    lines.push(`Time remaining: ${obs.puzzleParticipation.ticksRemaining} ticks`);
+
+    // FOCUS LOCK warning
+    lines.push('', '⚠️ **FOCUS LOCK**: While in puzzle, you can ONLY:');
+    lines.push('- share_fragment: Share your fragments with other players');
+    lines.push('- form_team / join_team: Organize with others');
+    lines.push('- submit_solution: Try to solve the puzzle');
+    lines.push('- leave_puzzle: Abandon puzzle (lose 50% stake!)');
+    lines.push('- consume: Emergency survival (food in inventory only)');
+  }
+
+  // Agent's puzzle fragments
+  if (obs.myPuzzleFragments && obs.myPuzzleFragments.length > 0) {
+    lines.push('', '### 📜 Your Puzzle Fragments');
+    for (const frag of obs.myPuzzleFragments) {
+      const sharedInfo = frag.sharedWith.length > 0
+        ? ` (shared with ${frag.sharedWith.length} agent(s))`
+        : ' (NOT SHARED)';
+      lines.push(`- Fragment #${frag.fragmentIndex}: "${frag.content}"${sharedInfo}`);
+      if (frag.hint) {
+        lines.push(`  Hint: ${frag.hint}`);
+      }
+    }
+    lines.push('💡 Share fragments with teammates to solve the puzzle!');
+  }
+
+  // Agent's team info
+  if (obs.myPuzzleTeam) {
+    lines.push('', '### 👥 Your Team');
+    const leaderInfo = obs.myPuzzleTeam.isLeader ? '(YOU ARE LEADER)' : `(led by ${obs.myPuzzleTeam.leaderId.slice(0, 8)})`;
+    lines.push(`Team: "${obs.myPuzzleTeam.name}" ${leaderInfo}`);
+    lines.push(`Members: ${obs.myPuzzleTeam.memberCount} | Total stake: ${obs.myPuzzleTeam.totalStake.toFixed(0)} CITY`);
+    if (obs.myPuzzleTeam.isLeader) {
+      lines.push('As leader, you can SUBMIT_SOLUTION on behalf of the team.');
+    }
+  }
+
+  // Nearby puzzle players (cooperation opportunities)
+  if (obs.nearbyPuzzlePlayers && obs.nearbyPuzzlePlayers.length > 0) {
+    lines.push('', '### 🤝 Nearby Puzzle Players');
+    for (const player of obs.nearbyPuzzlePlayers) {
+      const trustIcon = player.trustLevel > 20 ? '💚' : player.trustLevel < -20 ? '❌' : '⚪';
+      const sameGameNote = player.inSameGame ? ' (SAME PUZZLE!)' : '';
+      const teamNote = player.teamId ? ` [team: ${player.teamId.slice(0, 6)}]` : '';
+      lines.push(`- ${player.agentId.slice(0, 8)} ${trustIcon} (${player.distance} tiles) - ${player.fragmentCount} fragment(s)${sameGameNote}${teamNote}`);
+    }
+    lines.push('TIP: Share fragments and form teams to increase your winning chances!');
   }
 
   // State-based restrictions (CRITICAL for LLM to understand)
@@ -1148,6 +1230,81 @@ export function buildAvailableActions(obs: AgentObservation): AvailableAction[] 
       type: 'cancel_job_offer',
       description: `Cancel open job offer (${obs.myJobOffers.length} offers)`,
     });
+  }
+
+  // Puzzle Game System Actions
+
+  // If agent is in a puzzle (Focus Lock), only show puzzle-related actions
+  if (obs.inActivePuzzle && obs.puzzleParticipation) {
+    // Clear most actions - puzzle takes priority
+    // Keep only: consume (emergency), puzzle actions
+    const puzzleActions: AvailableAction[] = [];
+
+    // Keep consume action if agent has food (emergency survival)
+    const consumeAction = actions.find((a) => a.type === 'consume');
+    if (consumeAction) {
+      puzzleActions.push(consumeAction);
+    }
+
+    // Share fragment is available if agent has fragments
+    if (obs.myPuzzleFragments && obs.myPuzzleFragments.length > 0) {
+      const unsharedFragments = obs.myPuzzleFragments.filter((f) => f.sharedWith.length === 0);
+      if (unsharedFragments.length > 0) {
+        puzzleActions.push({
+          type: 'share_fragment',
+          description: `Share puzzle fragment with nearby player (${unsharedFragments.length} unshared)`,
+          cost: { energy: 1 },
+        });
+      }
+    }
+
+    // Form team is available if not already in a team
+    if (!obs.myPuzzleTeam) {
+      puzzleActions.push({
+        type: 'form_team',
+        description: 'Create a team for this puzzle',
+        cost: { energy: 2 },
+      });
+
+      // Join team - would need to know available teams from nearby players
+      if (obs.nearbyPuzzlePlayers && obs.nearbyPuzzlePlayers.some((p) => p.teamId && p.inSameGame)) {
+        puzzleActions.push({
+          type: 'join_team',
+          description: 'Join a nearby team in this puzzle',
+        });
+      }
+    }
+
+    // Submit solution is always available in active puzzle
+    puzzleActions.push({
+      type: 'submit_solution',
+      description: `Submit solution to ${obs.puzzleParticipation.gameType} puzzle`,
+      cost: { energy: 3 },
+    });
+
+    // Leave puzzle is always available
+    puzzleActions.push({
+      type: 'leave_puzzle',
+      description: 'Abandon puzzle (lose 50% of stake!)',
+      cost: { energy: 5 },
+    });
+
+    return puzzleActions;
+  }
+
+  // Not in a puzzle - add join puzzle action if games are available
+  if (obs.activePuzzleGames && obs.activePuzzleGames.length > 0) {
+    const openGames = obs.activePuzzleGames.filter((g) => !g.isParticipating && g.status === 'open');
+    if (openGames.length > 0 && obs.self.balance >= (openGames[0]?.entryStake || 5)) {
+      const bestGame = openGames.reduce((best, curr) =>
+        curr.prizePool > best.prizePool ? curr : best
+      );
+      actions.push({
+        type: 'join_puzzle',
+        description: `Join puzzle game (${openGames.length} open, best prize: ${bestGame.prizePool.toFixed(0)} CITY)`,
+        cost: { money: bestGame.entryStake },
+      });
+    }
   }
 
   return actions;
