@@ -51,6 +51,11 @@ export async function getPuzzleGameById(id: string): Promise<PuzzleGame | undefi
 
 /**
  * Get all active puzzle games (open or active status)
+ *
+ * Tenant matching:
+ * - If tenantId is undefined: return all active games (no tenant filter)
+ * - If tenantId is null: return only NULL tenant games
+ * - If tenantId is a string: return matching tenant games AND NULL tenant games (global puzzles)
  */
 export async function getActivePuzzleGames(tenantId?: string | null): Promise<PuzzleGame[]> {
   const conditions = [
@@ -58,11 +63,12 @@ export async function getActivePuzzleGames(tenantId?: string | null): Promise<Pu
   ];
 
   if (tenantId !== undefined) {
-    conditions.push(
-      tenantId === null
-        ? sql`${puzzleGames.tenantId} IS NULL`
-        : eq(puzzleGames.tenantId, tenantId)
-    );
+    if (tenantId === null) {
+      conditions.push(sql`${puzzleGames.tenantId} IS NULL`);
+    } else {
+      // Include both matching tenant AND global (NULL) puzzles
+      conditions.push(sql`(${puzzleGames.tenantId} = ${tenantId} OR ${puzzleGames.tenantId} IS NULL)`);
+    }
   }
 
   return db.select().from(puzzleGames).where(and(...conditions));
@@ -70,16 +76,22 @@ export async function getActivePuzzleGames(tenantId?: string | null): Promise<Pu
 
 /**
  * Get open puzzle games that can be joined
+ *
+ * Tenant matching:
+ * - If tenantId is undefined: return all open games (no tenant filter)
+ * - If tenantId is null: return only NULL tenant games
+ * - If tenantId is a string: return matching tenant games AND NULL tenant games (global puzzles)
  */
 export async function getOpenPuzzleGames(tenantId?: string | null): Promise<PuzzleGame[]> {
   const conditions = [eq(puzzleGames.status, 'open')];
 
   if (tenantId !== undefined) {
-    conditions.push(
-      tenantId === null
-        ? sql`${puzzleGames.tenantId} IS NULL`
-        : eq(puzzleGames.tenantId, tenantId)
-    );
+    if (tenantId === null) {
+      conditions.push(sql`${puzzleGames.tenantId} IS NULL`);
+    } else {
+      // Include both matching tenant AND global (NULL) puzzles
+      conditions.push(sql`(${puzzleGames.tenantId} = ${tenantId} OR ${puzzleGames.tenantId} IS NULL)`);
+    }
   }
 
   return db.select().from(puzzleGames).where(and(...conditions));
