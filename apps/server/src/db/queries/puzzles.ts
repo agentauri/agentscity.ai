@@ -34,15 +34,30 @@ import {
 // =============================================================================
 
 /**
+ * Validate UUID format (v4)
+ */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUuid(value: string): boolean {
+  return UUID_REGEX.test(value);
+}
+
+/**
  * Build tenant filter condition for puzzle queries.
  *
  * - undefined: no filter (return all)
  * - null: return only NULL tenant games
- * - string: return matching tenant games AND NULL tenant games (global puzzles)
+ * - string (valid UUID): return matching tenant games AND NULL tenant games (global puzzles)
+ * - string (invalid UUID): treated as null (return only NULL tenant games)
  */
 function buildTenantCondition(tenantId: string | null | undefined): ReturnType<typeof sql> | null {
   if (tenantId === undefined) return null;
   if (tenantId === null) return sql`${puzzleGames.tenantId} IS NULL`;
+  // Validate UUID format - if invalid, treat as null to avoid PostgreSQL errors
+  if (!isValidUuid(tenantId)) {
+    console.warn(`[Puzzles] Invalid tenant UUID "${tenantId}", treating as null`);
+    return sql`${puzzleGames.tenantId} IS NULL`;
+  }
   return sql`(${puzzleGames.tenantId} = ${tenantId} OR ${puzzleGames.tenantId} IS NULL)`;
 }
 
