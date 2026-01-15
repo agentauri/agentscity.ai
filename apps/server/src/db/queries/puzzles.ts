@@ -34,6 +34,19 @@ import {
 // =============================================================================
 
 /**
+ * Build tenant filter condition for puzzle queries.
+ *
+ * - undefined: no filter (return all)
+ * - null: return only NULL tenant games
+ * - string: return matching tenant games AND NULL tenant games (global puzzles)
+ */
+function buildTenantCondition(tenantId: string | null | undefined): ReturnType<typeof sql> | null {
+  if (tenantId === undefined) return null;
+  if (tenantId === null) return sql`${puzzleGames.tenantId} IS NULL`;
+  return sql`(${puzzleGames.tenantId} = ${tenantId} OR ${puzzleGames.tenantId} IS NULL)`;
+}
+
+/**
  * Create a new puzzle game
  */
 export async function createPuzzleGame(game: NewPuzzleGame): Promise<PuzzleGame> {
@@ -51,50 +64,24 @@ export async function getPuzzleGameById(id: string): Promise<PuzzleGame | undefi
 
 /**
  * Get all active puzzle games (open or active status)
- *
- * Tenant matching:
- * - If tenantId is undefined: return all active games (no tenant filter)
- * - If tenantId is null: return only NULL tenant games
- * - If tenantId is a string: return matching tenant games AND NULL tenant games (global puzzles)
  */
 export async function getActivePuzzleGames(tenantId?: string | null): Promise<PuzzleGame[]> {
-  const conditions = [
-    or(eq(puzzleGames.status, 'open'), eq(puzzleGames.status, 'active')),
-  ];
+  const statusCondition = or(eq(puzzleGames.status, 'open'), eq(puzzleGames.status, 'active'));
+  const tenantCondition = buildTenantCondition(tenantId);
 
-  if (tenantId !== undefined) {
-    if (tenantId === null) {
-      conditions.push(sql`${puzzleGames.tenantId} IS NULL`);
-    } else {
-      // Include both matching tenant AND global (NULL) puzzles
-      conditions.push(sql`(${puzzleGames.tenantId} = ${tenantId} OR ${puzzleGames.tenantId} IS NULL)`);
-    }
-  }
-
-  return db.select().from(puzzleGames).where(and(...conditions));
+  const whereClause = tenantCondition ? and(statusCondition, tenantCondition) : statusCondition;
+  return db.select().from(puzzleGames).where(whereClause);
 }
 
 /**
  * Get open puzzle games that can be joined
- *
- * Tenant matching:
- * - If tenantId is undefined: return all open games (no tenant filter)
- * - If tenantId is null: return only NULL tenant games
- * - If tenantId is a string: return matching tenant games AND NULL tenant games (global puzzles)
  */
 export async function getOpenPuzzleGames(tenantId?: string | null): Promise<PuzzleGame[]> {
-  const conditions = [eq(puzzleGames.status, 'open')];
+  const statusCondition = eq(puzzleGames.status, 'open');
+  const tenantCondition = buildTenantCondition(tenantId);
 
-  if (tenantId !== undefined) {
-    if (tenantId === null) {
-      conditions.push(sql`${puzzleGames.tenantId} IS NULL`);
-    } else {
-      // Include both matching tenant AND global (NULL) puzzles
-      conditions.push(sql`(${puzzleGames.tenantId} = ${tenantId} OR ${puzzleGames.tenantId} IS NULL)`);
-    }
-  }
-
-  return db.select().from(puzzleGames).where(and(...conditions));
+  const whereClause = tenantCondition ? and(statusCondition, tenantCondition) : statusCondition;
+  return db.select().from(puzzleGames).where(whereClause);
 }
 
 /**
