@@ -1,0 +1,169 @@
+# Misinformation Cascade Study
+# Phase 4: Information Cascade Experiments
+#
+# This experiment tests how false information spreads through agent networks
+# via stigmergy (scents), gossip, and direct information sharing.
+#
+# Research Questions:
+# 1. How fast does misinformation spread compared to true information?
+# 2. Does trust network density affect misinformation spread velocity?
+# 3. What conditions lead to correction of false beliefs?
+# 4. Do LLM agents show different information acceptance patterns than baselines?
+
+name: Misinformation Cascade Study
+description: |
+  Tests how false information spreads through stigmergy and gossip networks.
+  Introduces "patient zero" agents with false beliefs about resource locations.
+  Measures spread velocity, acceptance rate, and correction dynamics.
+
+hypothesis: |
+  Information diffusion velocity correlates with trust network density.
+  False information spreads faster in low-trust environments where agents
+  don't verify claims. LLM agents should show better correction behavior
+  than baseline agents due to reasoning capabilities.
+
+seed: 42
+duration: 2000
+
+world:
+  size: [100, 100]
+  biomes:
+    forest: 0.3
+    plains: 0.3
+    desert: 0.2
+    tundra: 0.2
+  scarcityMultiplier: 0.8  # Moderate scarcity to encourage information sharing
+
+# Agent distribution - mix of LLM and baseline for comparison
+agents:
+  # LLM agents (will exhibit emergent behavior)
+  - type: claude
+    count: 15
+    startArea:
+      x: [20, 40]
+      y: [20, 40]
+
+  - type: gemini
+    count: 15
+    startArea:
+      x: [60, 80]
+      y: [20, 40]
+
+  # Baseline agents (control group)
+  - type: baseline_random
+    count: 5
+    color: '#9ca3af'
+    startArea:
+      x: [20, 40]
+      y: [60, 80]
+
+  - type: baseline_rule
+    count: 5
+    color: '#6b7280'
+    startArea:
+      x: [60, 80]
+      y: [60, 80]
+
+# Resource configuration
+resources:
+  food:
+    clusters: 6
+    maxAmount: 15
+    regenRate: 0.8
+  energy:
+    clusters: 4
+    maxAmount: 12
+    regenRate: 0.5
+  material:
+    clusters: 3
+    maxAmount: 20
+    regenRate: 0.3
+
+shelters: 8
+
+# Experiment-specific: Information injection events
+# These trigger injection of false beliefs at specific ticks
+events:
+  # First injection at tick 100 - false resource location
+  - tick: 100
+    type: inject_misinformation
+    params:
+      targetAgentTypes: ['claude']
+      targetCount: 3  # Patient zero agents
+      falseInfo:
+        type: resource_location
+        claim: "Rich food spawn at coordinates (95, 95)"
+        isTrue: false
+        actualState: "Empty desert area with no resources"
+
+  # Second injection at tick 300 - false danger warning
+  - tick: 300
+    type: inject_misinformation
+    params:
+      targetAgentTypes: ['gemini']
+      targetCount: 2
+      falseInfo:
+        type: danger_warning
+        claim: "Aggressive agents spotted in the forest quadrant"
+        isTrue: false
+        actualState: "Normal agent activity"
+
+  # Third injection at tick 500 - false trade opportunity
+  - tick: 500
+    type: inject_misinformation
+    params:
+      targetAgentTypes: ['claude', 'gemini']
+      targetCount: 2
+      falseInfo:
+        type: trade_offer
+        claim: "Agent at (50, 50) is trading food for 0.1 CITY per unit"
+        isTrue: false
+        actualState: "No such trade offer exists"
+
+# Metrics to track
+metrics:
+  # Standard metrics
+  - survivalRate
+  - giniCoefficient
+  - cooperationIndex
+  - tradeCount
+
+  # Information flow metrics (Phase 4)
+  - infoSpreadRate         # New info recipients per tick
+  - infoAcceptanceRate     # % of agents who acted on shared info
+  - misinformationPenetration  # % of agents with false belief
+  - correctionLatency      # Ticks until first correction
+  - correctionEffectiveness  # % who corrected after exposure to truth
+  - trustNetworkDensity    # Trust links / possible links
+  - influencerConcentration  # Gini of info spread attribution
+  - echoChamberIndex       # Clustering of beliefs
+
+# Analysis windows for tracking spread over time
+analysisWindows:
+  - startTick: 0
+    endTick: 100
+    label: "Pre-injection baseline"
+
+  - startTick: 100
+    endTick: 300
+    label: "First injection spread"
+
+  - startTick: 300
+    endTick: 500
+    label: "Second injection spread"
+
+  - startTick: 500
+    endTick: 1000
+    label: "Multi-injection dynamics"
+
+  - startTick: 1000
+    endTick: 2000
+    label: "Long-term correction"
+
+# Baseline controls - automatically enabled
+requireBaselines: true
+autoInjectBaselines: true
+
+# Mode
+mode: llm
+tickIntervalMs: 1000

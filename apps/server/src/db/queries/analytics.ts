@@ -2721,3 +2721,454 @@ export async function getAnalyticsSnapshot(): Promise<AnalyticsSnapshot> {
     timestamp: Date.now(),
   };
 }
+
+// =============================================================================
+// Phase 4: Information Flow Metrics (Information Cascade Experiments)
+// =============================================================================
+
+export interface InformationFlowMetrics {
+  // Spread dynamics
+  infoSpreadVelocity: number;      // New info recipients per tick
+  informationEntropy: number;       // Diversity of beliefs (0-1)
+  consensusIndex: number;           // Agreement level (0-1)
+
+  // Misinformation specific
+  falseInfoPenetration: number;     // % agents with false belief
+  correctionLatency: number;        // Ticks to first correction
+  correctionEffectiveness: number;  // % who corrected after exposure
+
+  // Network effects
+  influencerConcentration: number;  // Gini of info spread attribution
+  echoChamberIndex: number;         // Clustering of beliefs (0-1)
+
+  // Trust network
+  trustNetworkDensity: number;      // Trust links / possible links
+  avgTrustScore: number;            // Average trust between connected agents
+}
+
+/**
+ * Round a value to 3 decimal places.
+ */
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+/**
+ * Calculate Gini coefficient from a list of counts.
+ */
+function calculateGiniCoefficient(counts: number[]): number {
+  if (counts.length <= 1) return 0;
+
+  const sorted = counts.slice().sort((a, b) => a - b);
+  const n = sorted.length;
+  const sumOfProducts = sorted.reduce((sum, count, i) => sum + (i + 1) * count, 0);
+  const totalCount = sorted.reduce((a, b) => a + b, 0);
+
+  if (totalCount === 0) return 0;
+
+  const gini = (2 * sumOfProducts) / (n * totalCount) - (n + 1) / n;
+  return Math.max(0, Math.min(1, gini));
+}
+
+/**
+ * Calculate normalized Shannon entropy from count distribution.
+ */
+function calculateNormalizedEntropy(counts: Map<string, number>): number {
+  const total = Array.from(counts.values()).reduce((a, b) => a + b, 0);
+  if (total === 0 || counts.size === 0) return 0;
+
+  let entropy = 0;
+  for (const count of counts.values()) {
+    const p = count / total;
+    if (p > 0) {
+      entropy -= p * Math.log(p);
+    }
+  }
+
+  const maxEntropy = Math.log(Math.max(counts.size, 1));
+  return maxEntropy > 0 ? entropy / maxEntropy : 0;
+}
+
+/**
+ * Extract rows from db.execute result (handles both array and object formats).
+ */
+function extractRows<T>(result: T[] | { rows: T[] }): T[] {
+  return Array.isArray(result) ? result : result.rows || [];
+}
+
+/**
+ * Get information flow metrics for cascade experiments.
+ * Analyzes how information (true or false) spreads through the agent network.
+ */
+export async function getInformationFlowMetrics(
+  startTick: number,
+  endTick: number
+): Promise<InformationFlowMetrics> {
+  const tickRange = endTick - startTick;
+
+  // Fetch information transfer events
+  const infoEvents = await db.execute<{
+    event_type: string;
+    tick: number;
+    source_id: string;
+    target_id: string;
+    info_type: string;
+  }>(sql`
+    SELECT
+      event_type,
+      tick,
+      payload->>'sourceAgentId' as source_id,
+      payload->>'targetAgentId' as target_id,
+      payload->>'infoType' as info_type
+    FROM events
+    WHERE event_type IN ('agent_shared_info', 'agent_deceived', 'agent_spread_gossip')
+      AND tick >= ${startTick}
+      AND tick <= ${endTick}
+  `);
+
+  const infoRows = extractRows(infoEvents);
+
+  // Process info events to extract spread metrics
+  const allRecipients = new Set<string>();
+  const sourceCounts = new Map<string, number>();
+  const infoTypeCounts = new Map<string, number>();
+  const sharePartners = new Map<string, Set<string>>();
+
+  for (const row of infoRows) {
+    const { source_id: sourceId, target_id: targetId, info_type } = row;
+
+    allRecipients.add(targetId);
+    sourceCounts.set(sourceId, (sourceCounts.get(sourceId) || 0) + 1);
+
+    const infoType = info_type || 'unknown';
+    infoTypeCounts.set(infoType, (infoTypeCounts.get(infoType) || 0) + 1);
+
+    if (!sharePartners.has(sourceId)) {
+      sharePartners.set(sourceId, new Set());
+    }
+    sharePartners.get(sourceId)!.add(targetId);
+  }
+
+  // Spread velocity
+  const infoSpreadVelocity = tickRange > 0 ? allRecipients.size / tickRange : 0;
+
+  // Influencer concentration (Gini)
+  const influencerConcentration = calculateGiniCoefficient(Array.from(sourceCounts.values()));
+
+  // Information entropy and consensus
+  const informationEntropy = calculateNormalizedEntropy(infoTypeCounts);
+  const consensusIndex = 1 - informationEntropy;
+
+  // Echo chamber index (bidirectional sharing ratio)
+  let echoScore = 0;
+  let echoCount = 0;
+  for (const [source, targets] of sharePartners.entries()) {
+    for (const target of targets) {
+      if (sharePartners.get(target)?.has(source)) {
+        echoScore++;
+      }
+      echoCount++;
+    }
+  }
+  const echoChamberIndex = echoCount > 0 ? echoScore / echoCount : 0;
+
+  // Fetch trust network metrics
+  const trustData = await db.execute<{
+    node_count: number;
+    edge_count: number;
+    avg_trust: number;
+  }>(sql`
+    SELECT
+      (SELECT COUNT(*) FROM agents WHERE state != 'dead') as node_count,
+      COUNT(*) as edge_count,
+      AVG(trust_score) as avg_trust
+    FROM agent_relationships
+  `);
+
+  const trustRows = extractRows(trustData);
+  const trustInfo = trustRows[0] || { node_count: 0, edge_count: 0, avg_trust: 0 };
+
+  const nodeCount = Number(trustInfo.node_count) || 1;
+  const edgeCount = Number(trustInfo.edge_count) || 0;
+  const maxEdges = nodeCount * (nodeCount - 1);
+  const trustNetworkDensity = maxEdges > 0 ? edgeCount / maxEdges : 0;
+  const avgTrustScore = Number(trustInfo.avg_trust) || 0;
+
+  return {
+    infoSpreadVelocity: round3(infoSpreadVelocity),
+    informationEntropy: round3(informationEntropy),
+    consensusIndex: round3(consensusIndex),
+    falseInfoPenetration: 0,
+    correctionLatency: 0,
+    correctionEffectiveness: 0,
+    influencerConcentration: round3(influencerConcentration),
+    echoChamberIndex: round3(echoChamberIndex),
+    trustNetworkDensity: round3(trustNetworkDensity),
+    avgTrustScore: Math.round(avgTrustScore * 100) / 100,
+  };
+}
+
+// =============================================================================
+// Phase 1: Baseline Comparison Metrics (Scientific Control)
+// =============================================================================
+
+export interface BaselineComparison {
+  /** Current tick for context */
+  tick: number;
+
+  /** Summary statistics by agent category */
+  categories: {
+    llm: AgentCategoryStats;
+    baseline: AgentCategoryStats;
+  };
+
+  /** Detailed breakdown by agent type */
+  byAgentType: Record<string, AgentTypeStats>;
+
+  /** Significance indicators */
+  significance: {
+    survivalDifference: number; // LLM survival rate - baseline survival rate
+    wealthDifference: number; // LLM avg wealth - baseline avg wealth
+    cooperationDifference: number; // LLM cooperation rate - baseline
+    actionDiversityDifference: number; // Difference in action entropy
+    isStatisticallySignificant: boolean; // Rough estimate (>10% difference)
+  };
+}
+
+interface AgentCategoryStats {
+  count: number;
+  aliveCount: number;
+  survivalRate: number;
+  avgHealth: number;
+  avgWealth: number;
+  avgHunger: number;
+  avgEnergy: number;
+  totalActions: number;
+  cooperativeActions: number; // trades, shares
+  aggressiveActions: number; // harm, steal
+  cooperationRate: number;
+}
+
+interface AgentTypeStats extends AgentCategoryStats {
+  llmType: string;
+  isBaseline: boolean;
+  actionBreakdown: Record<string, number>;
+  actionEntropy: number; // Diversity of actions (0-1)
+}
+
+/**
+ * Get baseline comparison metrics for scientific analysis.
+ * Compares LLM agents vs baseline agents across multiple dimensions.
+ */
+export async function getBaselineComparison(tick?: number): Promise<BaselineComparison> {
+  // Get current tick if not specified
+  const currentTickResult = await db
+    .select({ tick: sql<number>`MAX(${events.tick})` })
+    .from(events);
+  const currentTick = tick ?? Number(currentTickResult[0]?.tick) ?? 0;
+
+  // Get all agents with their stats
+  const allAgents = await db
+    .select({
+      id: agents.id,
+      llmType: agents.llmType,
+      state: agents.state,
+      health: agents.health,
+      hunger: agents.hunger,
+      energy: agents.energy,
+      balance: agents.balance,
+    })
+    .from(agents);
+
+  // Get action counts by agent
+  const actionCounts = await db.execute<{
+    agent_id: string;
+    event_type: string;
+    count: number;
+  }>(sql`
+    SELECT agent_id, event_type, COUNT(*) as count
+    FROM events
+    WHERE agent_id IS NOT NULL
+      AND event_type LIKE 'agent_%'
+    GROUP BY agent_id, event_type
+  `);
+
+  const actionRows = Array.isArray(actionCounts) ? actionCounts : (actionCounts as any).rows || [];
+
+  // Build action breakdown by agent
+  const actionsByAgent = new Map<string, Record<string, number>>();
+  for (const row of actionRows) {
+    const agentId = row.agent_id;
+    if (!actionsByAgent.has(agentId)) {
+      actionsByAgent.set(agentId, {});
+    }
+    actionsByAgent.get(agentId)![row.event_type] = Number(row.count);
+  }
+
+  // Helper to check if agent type is baseline
+  const isBaseline = (llmType: string) => llmType.startsWith('baseline_');
+
+  // Helper to calculate action entropy
+  const calculateEntropy = (actions: Record<string, number>): number => {
+    const total = Object.values(actions).reduce((a, b) => a + b, 0);
+    if (total === 0) return 0;
+
+    let entropy = 0;
+    for (const count of Object.values(actions)) {
+      if (count > 0) {
+        const p = count / total;
+        entropy -= p * Math.log(p);
+      }
+    }
+    // Normalize by max entropy (ln(number of action types))
+    const maxEntropy = Math.log(Math.max(Object.keys(actions).length, 1));
+    return maxEntropy > 0 ? entropy / maxEntropy : 0;
+  };
+
+  // Calculate stats by agent type
+  const byAgentType: Record<string, AgentTypeStats> = {};
+
+  for (const agent of allAgents) {
+    const llmType = agent.llmType;
+    if (!byAgentType[llmType]) {
+      byAgentType[llmType] = {
+        llmType,
+        isBaseline: isBaseline(llmType),
+        count: 0,
+        aliveCount: 0,
+        survivalRate: 0,
+        avgHealth: 0,
+        avgWealth: 0,
+        avgHunger: 0,
+        avgEnergy: 0,
+        totalActions: 0,
+        cooperativeActions: 0,
+        aggressiveActions: 0,
+        cooperationRate: 0,
+        actionBreakdown: {},
+        actionEntropy: 0,
+      };
+    }
+
+    const stats = byAgentType[llmType];
+    stats.count++;
+    if (agent.state !== 'dead') {
+      stats.aliveCount++;
+      stats.avgHealth += agent.health;
+      stats.avgWealth += agent.balance;
+      stats.avgHunger += agent.hunger;
+      stats.avgEnergy += agent.energy;
+    }
+
+    const agentActions = actionsByAgent.get(agent.id) || {};
+    for (const [action, count] of Object.entries(agentActions)) {
+      stats.totalActions += count;
+      stats.actionBreakdown[action] = (stats.actionBreakdown[action] || 0) + count;
+
+      // Categorize actions
+      if (['agent_traded', 'agent_shared_info'].includes(action)) {
+        stats.cooperativeActions += count;
+      } else if (['agent_harmed', 'agent_stole', 'agent_deceived'].includes(action)) {
+        stats.aggressiveActions += count;
+      }
+    }
+  }
+
+  // Finalize averages and rates
+  for (const stats of Object.values(byAgentType)) {
+    if (stats.aliveCount > 0) {
+      stats.avgHealth /= stats.aliveCount;
+      stats.avgWealth /= stats.aliveCount;
+      stats.avgHunger /= stats.aliveCount;
+      stats.avgEnergy /= stats.aliveCount;
+    }
+    stats.survivalRate = stats.count > 0 ? stats.aliveCount / stats.count : 0;
+    stats.cooperationRate = stats.totalActions > 0
+      ? stats.cooperativeActions / stats.totalActions
+      : 0;
+    stats.actionEntropy = calculateEntropy(stats.actionBreakdown);
+  }
+
+  // Aggregate into LLM vs Baseline categories
+  const llmStats: AgentCategoryStats = {
+    count: 0, aliveCount: 0, survivalRate: 0,
+    avgHealth: 0, avgWealth: 0, avgHunger: 0, avgEnergy: 0,
+    totalActions: 0, cooperativeActions: 0, aggressiveActions: 0, cooperationRate: 0,
+  };
+
+  const baselineStats: AgentCategoryStats = {
+    count: 0, aliveCount: 0, survivalRate: 0,
+    avgHealth: 0, avgWealth: 0, avgHunger: 0, avgEnergy: 0,
+    totalActions: 0, cooperativeActions: 0, aggressiveActions: 0, cooperationRate: 0,
+  };
+
+  for (const stats of Object.values(byAgentType)) {
+    const target = stats.isBaseline ? baselineStats : llmStats;
+    target.count += stats.count;
+    target.aliveCount += stats.aliveCount;
+    target.avgHealth += stats.avgHealth * stats.aliveCount;
+    target.avgWealth += stats.avgWealth * stats.aliveCount;
+    target.avgHunger += stats.avgHunger * stats.aliveCount;
+    target.avgEnergy += stats.avgEnergy * stats.aliveCount;
+    target.totalActions += stats.totalActions;
+    target.cooperativeActions += stats.cooperativeActions;
+    target.aggressiveActions += stats.aggressiveActions;
+  }
+
+  // Finalize category averages
+  for (const category of [llmStats, baselineStats]) {
+    if (category.aliveCount > 0) {
+      category.avgHealth /= category.aliveCount;
+      category.avgWealth /= category.aliveCount;
+      category.avgHunger /= category.aliveCount;
+      category.avgEnergy /= category.aliveCount;
+    }
+    category.survivalRate = category.count > 0 ? category.aliveCount / category.count : 0;
+    category.cooperationRate = category.totalActions > 0
+      ? category.cooperativeActions / category.totalActions
+      : 0;
+  }
+
+  // Calculate significance
+  const survivalDifference = llmStats.survivalRate - baselineStats.survivalRate;
+  const wealthDifference = llmStats.avgWealth - baselineStats.avgWealth;
+  const cooperationDifference = llmStats.cooperationRate - baselineStats.cooperationRate;
+
+  // Calculate average action entropy for each category
+  let llmEntropy = 0, llmEntropyCount = 0;
+  let baselineEntropy = 0, baselineEntropyCount = 0;
+  for (const stats of Object.values(byAgentType)) {
+    if (stats.isBaseline) {
+      baselineEntropy += stats.actionEntropy;
+      baselineEntropyCount++;
+    } else {
+      llmEntropy += stats.actionEntropy;
+      llmEntropyCount++;
+    }
+  }
+  const actionDiversityDifference =
+    (llmEntropyCount > 0 ? llmEntropy / llmEntropyCount : 0) -
+    (baselineEntropyCount > 0 ? baselineEntropy / baselineEntropyCount : 0);
+
+  // Rough statistical significance check (>10% difference in any major metric)
+  const isStatisticallySignificant =
+    Math.abs(survivalDifference) > 0.1 ||
+    Math.abs(cooperationDifference) > 0.1 ||
+    Math.abs(actionDiversityDifference) > 0.1;
+
+  return {
+    tick: currentTick,
+    categories: {
+      llm: llmStats,
+      baseline: baselineStats,
+    },
+    byAgentType,
+    significance: {
+      survivalDifference: Math.round(survivalDifference * 1000) / 1000,
+      wealthDifference: Math.round(wealthDifference * 100) / 100,
+      cooperationDifference: Math.round(cooperationDifference * 1000) / 1000,
+      actionDiversityDifference: Math.round(actionDiversityDifference * 1000) / 1000,
+      isStatisticallySignificant,
+    },
+  };
+}

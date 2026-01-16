@@ -219,6 +219,25 @@ export interface ExperimentSchema {
     description?: string;
     overrides: Partial<ExperimentSchema>;
   }>;
+
+  // -------------------------------------------------------------------------
+  // Baseline Controls (Scientific Rigor)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Require baseline agents for scientific comparison.
+   * When true (default), experiments must include baseline_random and baseline_rule
+   * agents to serve as control groups. Set to false only for exploratory runs.
+   * Default: true
+   */
+  requireBaselines?: boolean;
+
+  /**
+   * Auto-inject missing baseline agents if requireBaselines is true.
+   * When enabled, missing baseline agents will be added automatically.
+   * Default: true
+   */
+  autoInjectBaselines?: boolean;
 }
 
 // =============================================================================
@@ -246,6 +265,9 @@ export const DEFAULT_SCHEMA: Required<Omit<ExperimentSchema, 'variants' | 'event
   tickIntervalMs: 1000,
   metrics: ['survivalRate', 'giniCoefficient', 'cooperationIndex', 'tradeCount'],
   mode: 'llm',
+  // Baseline controls (Phase 1: Scientific Rigor)
+  requireBaselines: true,
+  autoInjectBaselines: true,
 };
 
 // =============================================================================
@@ -271,12 +293,94 @@ const LLM_COLORS: Record<LLMType, string> = {
 const ALL_LLM_TYPES: LLMType[] = ['claude', 'codex', 'gemini', 'deepseek', 'qwen', 'glm', 'grok'];
 
 // =============================================================================
+// Baseline Validation Constants
+// =============================================================================
+
+/**
+ * Minimum baseline agents required for scientific experiments.
+ * Ensures every experiment has a control group for comparison.
+ */
+export const MINIMUM_BASELINE_AGENTS: Partial<Record<string, number>> = {
+  baseline_random: 1,
+  baseline_rule: 1,
+};
+
+/**
+ * All baseline agent types for reference.
+ */
+export const BASELINE_AGENT_TYPES = [
+  'baseline_random',
+  'baseline_rule',
+  'baseline_sugarscape',
+  'baseline_qlearning',
+] as const;
+
+// =============================================================================
 // Schema Validation
 // =============================================================================
 
 export interface ValidationError {
   path: string;
   message: string;
+  code?: string;
+}
+
+/**
+ * Count agents by type from experiment agent configurations.
+ */
+function countAgentsByType(agents: ExperimentAgentConfig[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const agent of agents) {
+    const type = agent.type;
+    counts[type] = (counts[type] || 0) + agent.count;
+  }
+  return counts;
+}
+
+/**
+ * Validate that required baseline agents are present.
+ * Returns a validation error if baselines are missing, or null if valid.
+ */
+export function validateBaselineRequirement(
+  agents: ExperimentAgentConfig[],
+  requireBaselines: boolean = true
+): ValidationError | null {
+  if (!requireBaselines) {
+    return null;
+  }
+
+  const baselineCounts = countAgentsByType(agents);
+
+  for (const [type, minCount] of Object.entries(MINIMUM_BASELINE_AGENTS)) {
+    const actualCount = baselineCounts[type] || 0;
+    if (actualCount < (minCount ?? 0)) {
+      return {
+        path: 'agents',
+        message: `Experiment requires at least ${minCount} ${type} agent(s) for scientific comparison (found ${actualCount}). ` +
+          `Add baseline agents or set 'requireBaselines: false' in config to disable this check.`,
+        code: 'MISSING_BASELINE',
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Get list of missing baseline agent types.
+ */
+export function getMissingBaselines(agents: ExperimentAgentConfig[]): Array<{ type: string; required: number; actual: number }> {
+  const counts = countAgentsByType(agents);
+  const missing: Array<{ type: string; required: number; actual: number }> = [];
+
+  for (const [type, minCount] of Object.entries(MINIMUM_BASELINE_AGENTS)) {
+    const actualCount = counts[type] || 0;
+    if (actualCount < (minCount ?? 0)) {
+      missing.push({ type, required: minCount ?? 0, actual: actualCount });
+    }
+  }
+
+  return missing;
 }
 
 /**
@@ -402,8 +506,142 @@ export function validateSchema(schema: unknown): { valid: boolean; errors: Valid
     }
   }
 
+  // Validate baseline requirements (default: true unless explicitly disabled)
+  // Skip baseline validation if genesis is enabled (genesis agents are created dynamically)
+  const genesisEnabled = s.genesis && (s.genesis as Record<string, unknown>).enabled === true;
+  const requireBaselines = s.requireBaselines !== false && !genesisEnabled;
+
+  if (requireBaselines && Array.isArray(s.agents)) {
+    const baselineError = validateBaselineRequirement(
+      s.agents as ExperimentAgentConfig[],
+      true
+    );
+    if (baselineError) {
+      errors.push(baselineError);
+    }
+  }
+
   return { valid: errors.length === 0, errors };
 }
+
+// =============================================================================
+// Baseline Auto-Injection
+// =============================================================================
+
+/**
+ * Default baseline agent configurations for auto-injection.
+ * These are used when auto-injecting baseline agents to missing experiments.
+ */
+const DEFAULT_BASELINE_INJECT_CONFIGS: Record<string, { color: string; startOffset: [number, number] }> = {
+  baseline_random: { color: '#9ca3af', startOffset: [0.7, 0.3] },
+  baseline_rule: { color: '#6b7280', startOffset: [0.7, 0.35] },
+  baseline_sugarscape: { color: '#4b5563', startOffset: [0.7, 0.4] },
+  baseline_qlearning: { color: '#374151', startOffset: [0.7, 0.45] },
+};
+
+/**
+ * Auto-inject missing baseline agents into an experiment schema.
+ * Returns a new schema with baseline agents added (does not mutate original).
+ *
+ * @param schema - Original experiment schema
+ * @param config - Optional configuration for baseline injection
+ * @returns Modified schema with baseline agents injected
+ */
+export function autoInjectBaselines(
+  schema: ExperimentSchema,
+  config?: {
+    random?: number; // Number of baseline_random agents to inject (default: 2)
+    rule?: number; // Number of baseline_rule agents to inject (default: 2)
+    sugarscape?: number; // Number of baseline_sugarscape agents to inject (default: 0)
+    qlearning?: number; // Number of baseline_qlearning agents to inject (default: 0)
+  }
+): ExperimentSchema {
+  const defaults = {
+    random: 2,
+    rule: 2,
+    sugarscape: 0,
+    qlearning: 0,
+    ...config,
+  };
+
+  const counts = countAgentsByType(schema.agents);
+  const newAgents: ExperimentAgentConfig[] = [...schema.agents];
+  const worldSize = schema.world?.size ?? [100, 100];
+
+  // Inject baseline_random if needed
+  const randomNeeded = Math.max(0, (MINIMUM_BASELINE_AGENTS.baseline_random ?? 0) - (counts.baseline_random ?? 0));
+  if (randomNeeded > 0 || (defaults.random > 0 && !counts.baseline_random)) {
+    const toAdd = Math.max(randomNeeded, defaults.random - (counts.baseline_random ?? 0));
+    if (toAdd > 0) {
+      const cfg = DEFAULT_BASELINE_INJECT_CONFIGS.baseline_random;
+      newAgents.push({
+        type: 'baseline_random',
+        count: toAdd,
+        color: cfg.color,
+        startArea: {
+          x: [worldSize[0] * cfg.startOffset[0], worldSize[0] * (cfg.startOffset[0] + 0.1)],
+          y: [worldSize[1] * cfg.startOffset[1], worldSize[1] * (cfg.startOffset[1] + 0.1)],
+        },
+      });
+    }
+  }
+
+  // Inject baseline_rule if needed
+  const ruleNeeded = Math.max(0, (MINIMUM_BASELINE_AGENTS.baseline_rule ?? 0) - (counts.baseline_rule ?? 0));
+  if (ruleNeeded > 0 || (defaults.rule > 0 && !counts.baseline_rule)) {
+    const toAdd = Math.max(ruleNeeded, defaults.rule - (counts.baseline_rule ?? 0));
+    if (toAdd > 0) {
+      const cfg = DEFAULT_BASELINE_INJECT_CONFIGS.baseline_rule;
+      newAgents.push({
+        type: 'baseline_rule',
+        count: toAdd,
+        color: cfg.color,
+        startArea: {
+          x: [worldSize[0] * cfg.startOffset[0], worldSize[0] * (cfg.startOffset[0] + 0.1)],
+          y: [worldSize[1] * cfg.startOffset[1], worldSize[1] * (cfg.startOffset[1] + 0.1)],
+        },
+      });
+    }
+  }
+
+  // Optionally inject baseline_sugarscape
+  if (defaults.sugarscape > 0 && !counts.baseline_sugarscape) {
+    const cfg = DEFAULT_BASELINE_INJECT_CONFIGS.baseline_sugarscape;
+    newAgents.push({
+      type: 'baseline_sugarscape',
+      count: defaults.sugarscape,
+      color: cfg.color,
+      startArea: {
+        x: [worldSize[0] * cfg.startOffset[0], worldSize[0] * (cfg.startOffset[0] + 0.1)],
+        y: [worldSize[1] * cfg.startOffset[1], worldSize[1] * (cfg.startOffset[1] + 0.1)],
+      },
+    });
+  }
+
+  // Optionally inject baseline_qlearning
+  if (defaults.qlearning > 0 && !counts.baseline_qlearning) {
+    const cfg = DEFAULT_BASELINE_INJECT_CONFIGS.baseline_qlearning;
+    newAgents.push({
+      type: 'baseline_qlearning',
+      count: defaults.qlearning,
+      color: cfg.color,
+      startArea: {
+        x: [worldSize[0] * cfg.startOffset[0], worldSize[0] * (cfg.startOffset[0] + 0.1)],
+        y: [worldSize[1] * cfg.startOffset[1], worldSize[1] * (cfg.startOffset[1] + 0.1)],
+      },
+    });
+  }
+
+  return {
+    ...schema,
+    agents: newAgents,
+  };
+}
+
+/**
+ * Helper to count agents by type (exported for use in runner).
+ */
+export { countAgentsByType };
 
 // =============================================================================
 // Schema Conversion

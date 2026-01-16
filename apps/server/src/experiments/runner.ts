@@ -22,6 +22,8 @@ import {
   parseJSON,
   schemaToSpawnConfig,
   validateSchema,
+  autoInjectBaselines,
+  getMissingBaselines,
   type ExperimentSchema,
 } from './schema';
 import {
@@ -66,6 +68,20 @@ export interface RunnerOptions {
 
   /** Export format */
   format?: 'json' | 'csv' | 'both';
+
+  /** Auto-inject missing baseline agents (default: true) */
+  autoInjectBaselines?: boolean;
+
+  /** Baseline agent counts for auto-injection */
+  baselineConfig?: {
+    random?: number;    // default: 2
+    rule?: number;      // default: 2
+    sugarscape?: number;
+    qlearning?: number;
+  };
+
+  /** Skip baseline validation (not recommended for production experiments) */
+  skipBaselineValidation?: boolean;
 }
 
 export interface RunResult {
@@ -194,11 +210,37 @@ export async function runExperiment(options: RunnerOptions): Promise<RunResult[]
     verbose = false,
     dryRun = false,
     format = 'json',
+    autoInjectBaselines: shouldAutoInject = true,
+    baselineConfig,
+    skipBaselineValidation = false,
   } = options;
 
   // Load config
   console.log(`[Runner] Loading config: ${configPath}`);
-  const schema = await loadConfig(configPath);
+  let schema = await loadConfig(configPath);
+
+  // Check for missing baselines and auto-inject if enabled
+  const missingBaselines = getMissingBaselines(schema.agents);
+  if (missingBaselines.length > 0) {
+    if (shouldAutoInject && schema.autoInjectBaselines !== false) {
+      console.log(`[Runner] Auto-injecting missing baseline agents:`);
+      missingBaselines.forEach(m => {
+        console.log(`  - ${m.type}: adding ${m.required - m.actual} agent(s)`);
+      });
+      schema = autoInjectBaselines(schema, baselineConfig);
+    } else if (!skipBaselineValidation) {
+      console.warn('[Runner] Warning: Missing baseline agents for scientific comparison:');
+      missingBaselines.forEach(m => {
+        console.warn(`  - ${m.type}: need ${m.required}, have ${m.actual}`);
+      });
+      console.warn('[Runner] Use --auto-inject to add them automatically, or --skip-baseline-validation to disable this check');
+    }
+  }
+
+  // Override requireBaselines if skipBaselineValidation is set
+  if (skipBaselineValidation) {
+    schema = { ...schema, requireBaselines: false };
+  }
 
   // Validate
   const validation = validateSchema(schema);
@@ -211,6 +253,12 @@ export async function runExperiment(options: RunnerOptions): Promise<RunResult[]
   console.log(`[Runner] Experiment: ${schema.name}`);
   console.log(`[Runner] Duration: ${schema.duration} ticks`);
   console.log(`[Runner] Runs per variant: ${runs}`);
+
+  // Log baseline agent count
+  const baselineCount = schema.agents
+    .filter(a => a.type.startsWith('baseline_'))
+    .reduce((sum, a) => sum + a.count, 0);
+  console.log(`[Runner] Baseline agents: ${baselineCount} (for scientific comparison)`);
 
   if (dryRun) {
     console.log('[Runner] Dry run - configuration is valid');
@@ -396,6 +444,9 @@ async function main() {
   let verbose = false;
   let dryRun = false;
   let format: 'json' | 'csv' | 'both' = 'json';
+  let autoInjectBaselines = true;
+  let skipBaselineValidation = false;
+  const baselineConfig: { random?: number; rule?: number; sugarscape?: number; qlearning?: number } = {};
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -423,6 +474,28 @@ async function main() {
       case '-f':
         format = args[++i] as 'json' | 'csv' | 'both';
         break;
+      // Baseline control options
+      case '--auto-inject':
+        autoInjectBaselines = true;
+        break;
+      case '--no-auto-inject':
+        autoInjectBaselines = false;
+        break;
+      case '--skip-baseline-validation':
+        skipBaselineValidation = true;
+        break;
+      case '--baseline-random':
+        baselineConfig.random = parseInt(args[++i], 10);
+        break;
+      case '--baseline-rule':
+        baselineConfig.rule = parseInt(args[++i], 10);
+        break;
+      case '--baseline-sugarscape':
+        baselineConfig.sugarscape = parseInt(args[++i], 10);
+        break;
+      case '--baseline-qlearning':
+        baselineConfig.qlearning = parseInt(args[++i], 10);
+        break;
       case '--help':
       case '-h':
         console.log(`
@@ -440,8 +513,18 @@ Options:
   -f, --format <type>   Export format: json, csv, or both (default: json)
   -h, --help            Show this help
 
+Baseline Controls (Scientific Rigor):
+  --auto-inject             Auto-inject missing baseline agents (default: on)
+  --no-auto-inject          Disable auto-injection of baseline agents
+  --skip-baseline-validation  Skip baseline validation (not recommended)
+  --baseline-random <n>     Number of baseline_random agents (default: 2)
+  --baseline-rule <n>       Number of baseline_rule agents (default: 2)
+  --baseline-sugarscape <n> Number of baseline_sugarscape agents (default: 0)
+  --baseline-qlearning <n>  Number of baseline_qlearning agents (default: 0)
+
 Example:
   bun run src/experiments/runner.ts -c experiments/scarcity.yaml -r 5 -o results/
+  bun run src/experiments/runner.ts -c experiments/test.yaml --no-auto-inject --skip-baseline-validation
 `);
         process.exit(0);
     }
@@ -461,6 +544,9 @@ Example:
       verbose,
       dryRun,
       format,
+      autoInjectBaselines,
+      baselineConfig: Object.keys(baselineConfig).length > 0 ? baselineConfig : undefined,
+      skipBaselineValidation,
     });
     process.exit(0);
   } catch (error) {

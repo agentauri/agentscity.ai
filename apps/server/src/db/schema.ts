@@ -9,6 +9,7 @@
 
 import {
   pgTable,
+  pgEnum,
   uuid,
   varchar,
   integer,
@@ -21,6 +22,24 @@ import {
   uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core';
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+/**
+ * Event category enum for separating infrastructure vs emergent events.
+ * - infrastructure: System-imposed events (tick, decay, death)
+ * - emergent: Agent-created events (trade, harm, signal)
+ * - puzzle: Puzzle game system events
+ * - observation: Metric snapshots
+ */
+export const eventCategoryEnum = pgEnum('event_category', [
+  'infrastructure',
+  'emergent',
+  'puzzle',
+  'observation',
+]);
 
 // =============================================================================
 // TENANTS (Multi-tenancy support)
@@ -381,6 +400,18 @@ export const events = pgTable('events', {
   eventType: varchar('event_type', { length: 50 }).notNull(),
   payload: jsonb('payload').notNull(),
 
+  /**
+   * Event category for separating infrastructure vs emergent events.
+   * - infrastructure: System-imposed events (tick, decay, death, birth)
+   * - emergent: Agent-created events (trade, harm, signal, share)
+   * - puzzle: Puzzle game system events
+   * - observation: Metric snapshots
+   *
+   * This separation is critical for scientific analysis:
+   * Only emergent events should count toward cooperation/emergence metrics.
+   */
+  category: eventCategoryEnum('category').notNull().default('emergent'),
+
   // Ordering
   version: bigint('version', { mode: 'number' }).notNull(),
 
@@ -394,6 +425,9 @@ export const events = pgTable('events', {
   // Composite indexes for tenant-scoped queries
   index('events_tenant_tick_idx').on(table.tenantId, table.tick),
   index('events_type_tick_idx').on(table.eventType, table.tick),
+  // Category-based indexes for scientific analysis
+  index('events_category_idx').on(table.category),
+  index('events_category_tick_idx').on(table.category, table.tick),
 ]);
 
 // =============================================================================
@@ -1339,3 +1373,66 @@ export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
 export type UserLlmKey = typeof userLlmKeys.$inferSelect;
 export type NewUserLlmKey = typeof userLlmKeys.$inferInsert;
+
+// =============================================================================
+// INFORMATION BELIEFS (Phase 4: Information Cascade Experiments)
+// =============================================================================
+
+/**
+ * Tracks information/beliefs held by agents for cascade experiments.
+ *
+ * Used to study:
+ * - How information spreads through agent networks
+ * - Misinformation penetration and correction dynamics
+ * - Trust network effects on information acceptance
+ * - Influencer identification and echo chamber detection
+ */
+export const informationBeliefs = pgTable('information_beliefs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  // Multi-tenancy
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Agent holding this belief
+  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+
+  // Belief identification (for deduplication and tracking)
+  infoHash: varchar('info_hash', { length: 32 }).notNull(), // SHA256 hash (first 32 chars) of claim
+
+  // Claim details
+  claimType: varchar('claim_type', { length: 50 }).notNull(), // 'resource_location', 'danger_warning', 'trade_offer', etc.
+  claimContent: jsonb('claim_content').notNull(), // The actual claim content
+
+  // Verification status
+  isTrue: boolean('is_true'), // NULL if unverifiable, TRUE/FALSE for verifiable claims
+
+  // Source tracking
+  sourceAgentId: uuid('source_agent_id').references(() => agents.id, { onDelete: 'set null' }), // NULL if experimentally injected
+
+  // Timing
+  receivedTick: bigint('received_tick', { mode: 'number' }).notNull(), // When they received this info
+  actedOnTick: bigint('acted_on_tick', { mode: 'number' }), // When they acted on this info (if ever)
+  correctedTick: bigint('corrected_tick', { mode: 'number' }), // When they learned it was false
+
+  // Correction source
+  correctionSourceId: uuid('correction_source_id').references(() => agents.id, { onDelete: 'set null' }),
+
+  // Spread tracking
+  spreadCount: integer('spread_count').notNull().default(0), // How many agents this agent spread the info to
+
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('beliefs_tenant_idx').on(table.tenantId),
+  index('beliefs_agent_idx').on(table.agentId),
+  index('beliefs_info_hash_idx').on(table.infoHash),
+  index('beliefs_tick_idx').on(table.receivedTick),
+  index('beliefs_claim_type_idx').on(table.claimType),
+  index('beliefs_source_agent_idx').on(table.sourceAgentId),
+  // Composite indexes for common queries
+  index('beliefs_agent_hash_idx').on(table.agentId, table.infoHash),
+  index('beliefs_type_tick_idx').on(table.claimType, table.receivedTick),
+]);
+
+// Information Cascade types
+export type InformationBelief = typeof informationBeliefs.$inferSelect;
+export type NewInformationBelief = typeof informationBeliefs.$inferInsert;

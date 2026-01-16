@@ -422,17 +422,33 @@ export const CONFIG = {
   },
 
   // ---------------------------------------------------------------------------
-  // Queue (BullMQ)
+  // Queue (BullMQ) - Phase 3: Async Architecture Scale
   // ---------------------------------------------------------------------------
   queue: {
-    /** Number of concurrent LLM decision jobs */
-    concurrency: env('QUEUE_CONCURRENCY', 6),
+    /** Number of concurrent LLM decision jobs (increased from 6 for better throughput) */
+    concurrency: env('QUEUE_CONCURRENCY', 20),
     /** Job timeout in milliseconds */
     timeoutMs: env('QUEUE_TIMEOUT_MS', 30000),
     /** Maximum retries for failed jobs */
     maxRetries: env('QUEUE_MAX_RETRIES', 2),
     /** Backoff delay for retries in milliseconds */
     backoffDelayMs: env('QUEUE_BACKOFF_MS', 1000),
+
+    // Phase 3: Batch Processing for Scale
+    /** Batch size for processing decisions (process in groups) */
+    batchSize: env('QUEUE_BATCH_SIZE', 50),
+    /** Priority levels for job queuing (higher = more urgent) */
+    priorityLevels: env('QUEUE_PRIORITY_LEVELS', 3),
+    /** Delay between batches in ms (rate limit optimization) */
+    batchDelayMs: env('QUEUE_BATCH_DELAY_MS', 100),
+
+    // Phase 3: Backpressure Control
+    /** Maximum queue depth before applying backpressure */
+    maxQueueDepth: env('QUEUE_MAX_DEPTH', 1000),
+    /** Delay in ms when queue is at capacity */
+    backpressureDelayMs: env('QUEUE_BACKPRESSURE_DELAY_MS', 100),
+    /** Enable backpressure control */
+    backpressureEnabled: envBool('QUEUE_BACKPRESSURE_ENABLED', true),
   },
 
   // ---------------------------------------------------------------------------
@@ -621,6 +637,35 @@ export const CONFIG = {
     includeBaselineAgents: envBool('INCLUDE_BASELINE_AGENTS', false),
     /** Number of each baseline agent type to include (1-3) */
     baselineAgentCount: Math.min(3, Math.max(1, env('BASELINE_AGENT_COUNT', 1))),
+
+    // -------------------------------------------------------------------------
+    // Mandatory Baseline Controls (Phase 1: Scientific Rigor)
+    // -------------------------------------------------------------------------
+    /**
+     * Require baseline agents for scientific experiments.
+     * When enabled, experiments must include baseline_random and baseline_rule
+     * agents to serve as control groups for meaningful comparison.
+     * Default: true for production experiments
+     */
+    requireBaselines: envBool('REQUIRE_BASELINES', true),
+
+    /**
+     * Auto-inject missing baseline agents when requireBaselines is true.
+     * When enabled, missing baseline agents will be added automatically.
+     * Default: true for convenience
+     */
+    autoInjectBaselines: envBool('AUTO_INJECT_BASELINES', true),
+
+    /**
+     * Minimum number of baseline agents per type.
+     * These counts ensure statistical validity of comparisons.
+     */
+    minBaselineAgents: {
+      baseline_random: env('MIN_BASELINE_RANDOM', 2),
+      baseline_rule: env('MIN_BASELINE_RULE', 2),
+      baseline_sugarscape: env('MIN_BASELINE_SUGARSCAPE', 0),
+      baseline_qlearning: env('MIN_BASELINE_QLEARNING', 0),
+    },
   },
 
   // ---------------------------------------------------------------------------
