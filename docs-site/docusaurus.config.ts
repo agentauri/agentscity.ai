@@ -30,9 +30,10 @@ const config: Config = {
       'classic',
       {
         docs: {
+          path: '../docs/public', // Source from docs/public instead of docs-site/docs
           sidebarPath: './sidebars.ts',
           routeBasePath: '/', // Docs at root
-          editUrl: 'https://github.com/agentauri/simagents.io/tree/main/docs-site/',
+          editUrl: 'https://github.com/agentauri/simagents.io/tree/main/',
         },
         blog: false, // Disable blog
         theme: {

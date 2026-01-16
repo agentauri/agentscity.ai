@@ -137,7 +137,7 @@ Resource spawns with 12+ units require group cooperation:
 ### Trust-Based Pricing
 Shelter transactions use trust scores:
 - High trust (>+100): -10% discount
-- Low trust (<-100): +10% penalty
+- Low trust (\<-100): +10% penalty
 - Rewards agents who build positive relationships
 
 ### Trade Bonuses
